@@ -1,0 +1,93 @@
+{
+  "$schema": "https://mintlify.com/schema.json",
+  "name": "KitAsso",
+  "logo": {
+    "dark": "/logo/dark.svg",
+    "light": "/logo/light.svg"
+  },
+  "favicon": "/favicon.svg",
+  "colors": {
+    "primary": "#0D9373",
+    "light": "#07C983",
+    "dark": "#0D9373",
+    "anchors": {
+      "from": "#0D9373",
+      "to": "#07C983"
+    }
+  },
+  "topbarLinks": [
+    {
+      "name": "GitHub",
+      "url": "https://github.com/votre-org/kitasso"
+    }
+  ],
+  "topbarCtaButton": {
+    "name": "Démo",
+    "url": "https://demo.kitasso.com"
+  },
+  "tabs": [
+    {
+      "name": "API Reference",
+      "url": "api"
+    },
+    {
+      "name": "Features",
+      "url": "features"
+    }
+  ],
+  "navigation": [
+    {
+      "group": "Démarrage",
+      "pages": [
+        "introduction",
+        "quickstart"
+      ]
+    },
+    {
+      "group": "Architecture",
+      "pages": [
+        "architecture/overview",
+        "architecture/feature-based",
+        "architecture/patterns"
+      ]
+    },
+    {
+      "group": "API Layer",
+      "pages": [
+        "api/overview",
+        "api/auth",
+        "api/tools",
+        "api/workflows",
+        "api/packs",
+        "api/quiz"
+      ]
+    },
+    {
+      "group": "Features",
+      "pages": [
+        "features/tools",
+        "features/workflows",
+        "features/tool-packs"
+      ]
+    },
+    {
+      "group": "Intégrations",
+      "pages": [
+        "integrations/supabase",
+        "integrations/storage"
+      ]
+    },
+    {
+      "group": "Développement",
+      "pages": [
+        "development/conventions",
+        "development/hooks",
+        "development/components",
+        "development/testing"
+      ]
+    }
+  ],
+  "footerSocials": {
+    "github": "https://github.com/votre-org/kitasso"
+  }
+}

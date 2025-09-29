@@ -1,0 +1,72 @@
+---
+title: 'Bienvenue sur KitAsso'
+description: 'Plateforme complète pour la gestion d'outils et workflows associatifs'
+---
+
+<img 
+  className="block dark:hidden" 
+  src="/images/hero-light.png" 
+  alt="KitAsso Hero Light" 
+/>
+<img 
+  className="hidden dark:block" 
+  src="/images/hero-dark.png" 
+  alt="KitAsso Hero Dark" 
+/>
+
+## Qu'est-ce que KitAsso ?
+
+KitAsso est une plateforme modulaire qui permet aux associations de :
+
+- **Gérer des outils** : créer, organiser et partager des ressources
+- **Automatiser des workflows** : concevoir des processus métier sans code
+- **Créer des packs thématiques** : regrouper outils et workflows
+- **Quiz & évaluations** : mesurer l'impact et l'apprentissage
+
+## Architecture
+
+<CardGroup cols={2}>
+  <Card title="Feature-Based" icon="layer-group" href="/architecture/feature-based">
+    Organisation par fonctionnalité métier
+  </Card>
+  
+  <Card title="API Layer" icon="plug" href="/api/overview">
+    Couche API découplée et réutilisable
+  </Card>
+  
+  <Card title="Supabase" icon="database" href="/integrations/supabase">
+    Backend as a Service intégré
+  </Card>
+  
+  <Card title="Patterns" icon="code" href="/architecture/patterns">
+    Modals, forms, routes standardisés
+  </Card>
+</CardGroup>
+
+## Démarrage rapide
+
+<Card title="Installation" icon="rocket" href="/quickstart">
+  Lancez le projet en 5 minutes
+</Card>
+
+## Stack technique
+
+<AccordionGroup>
+  <Accordion title="Frontend">
+    - Next.js 14+ (App Router)
+    - TypeScript
+    - Tailwind CSS
+  </Accordion>
+  
+  <Accordion title="Backend">
+    - Supabase (Auth + Database + Storage)
+    - PostgreSQL
+    - Row Level Security (RLS)
+  </Accordion>
+  
+  <Accordion title="Tooling">
+    - Zod (validation)
+    - React Hook Form
+    - TanStack Query
+  </Accordion>
+</AccordionGroup>
