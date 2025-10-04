@@ -1,38 +1,58 @@
 {
   "$schema": "https://mintlify.com/schema.json",
-  "name": "KitAsso",
+  "name": "Kit'Asso Documentation",
   "logo": {
     "dark": "/logo/dark.svg",
     "light": "/logo/light.svg"
   },
   "favicon": "/favicon.svg",
   "colors": {
-    "primary": "#0D9373",
-    "light": "#07C983",
-    "dark": "#0D9373",
+    "primary": "#4F46E5",
+    "light": "#6366F1",
+    "dark": "#4338CA",
     "anchors": {
-      "from": "#0D9373",
-      "to": "#07C983"
+      "from": "#4F46E5",
+      "to": "#3B82F6"
     }
   },
   "topbarLinks": [
     {
       "name": "GitHub",
       "url": "https://github.com/votre-org/kitasso"
+    },
+    {
+      "name": "Demo",
+      "url": "https://kitasso.netlify.app"
     }
   ],
   "topbarCtaButton": {
-    "name": "Démo",
-    "url": "https://demo.kitasso.com"
+    "name": "Dashboard Admin",
+    "url": "https://kitasso.netlify.app/admin"
   },
   "tabs": [
     {
-      "name": "API Reference",
-      "url": "api"
-    },
-    {
       "name": "Features",
       "url": "features"
+    },
+    {
+      "name": "Base de données",
+      "url": "database"
+    },
+    {
+      "name": "Développement",
+      "url": "development"
+    }
+  ],
+  "anchors": [
+    {
+      "name": "Supabase",
+      "icon": "database",
+      "url": "https://supabase.com/docs"
+    },
+    {
+      "name": "React",
+      "icon": "react",
+      "url": "https://react.dev"
     }
   ],
   "navigation": [
@@ -48,18 +68,9 @@
       "pages": [
         "architecture/overview",
         "architecture/feature-based",
-        "architecture/patterns"
-      ]
-    },
-    {
-      "group": "API Layer",
-      "pages": [
-        "api/overview",
-        "api/auth",
-        "api/tools",
-        "api/workflows",
-        "api/packs",
-        "api/quiz"
+        "architecture/api-layer",
+        "architecture/patterns",
+        "architecture/database"
       ]
     },
     {
@@ -67,27 +78,46 @@
       "pages": [
         "features/tools",
         "features/workflows",
-        "features/tool-packs"
+        "features/tool-packs",
+        "features/quiz",
+        "features/admin"
       ]
     },
     {
-      "group": "Intégrations",
+      "group": "Base de données",
       "pages": [
-        "integrations/supabase",
-        "integrations/storage"
+        "database/schema",
+        "database/rls",
+        "database/migrations",
+        "database/storage"
       ]
     },
     {
       "group": "Développement",
       "pages": [
-        "development/conventions",
+        "development/getting-started",
+        "development/api-layer",
         "development/hooks",
         "development/components",
-        "development/testing"
+        "development/testing",
+        "development/conventions"
+      ]
+    },
+    {
+      "group": "Déploiement",
+      "pages": [
+        "deployment/netlify",
+        "deployment/supabase",
+        "deployment/monitoring"
       ]
     }
   ],
   "footerSocials": {
     "github": "https://github.com/votre-org/kitasso"
+  },
+  "analytics": {
+    "ga4": {
+      "measurementId": "G-XXXXXXXXXX"
+    }
   }
 }

@@ -1,73 +1,378 @@
 ---
 title: 'Démarrage rapide'
-description: 'Configurez KitAsso en local en 5 minutes'
+description: 'Installez et lancez Kit'Asso en local en 10 minutes'
 ---
 
 ## Prérequis
 
-<Check>Node.js 18+ installé</Check>
-<Check>Compte Supabase créé</Check>
-<Check>Git installé</Check>
+<Check>**Node.js 18+** installé ([Télécharger](https://nodejs.org))</Check>
+<Check>**npm** ou **yarn** installé</Check>
+<Check>**Compte Supabase** créé ([S'inscrire](https://supabase.com))</Check>
+<Check>**Git** installé</Check>
+
+---
 
 ## Installation
 
 <Steps>
-  <Step title="Cloner le projet">
-```bash
+  <Step title="Cloner le repository">
+    ```bash
     git clone https://github.com/votre-org/kitasso.git
     cd kitasso
+    ```
+  </Step>
+  
+  <Step title="Installer les dépendances">
+    ```bash
     npm install
-    </Step>
-  <Step title="Configuration Supabase">
-    Créez un fichier `.env.local` :
-```bash
-    NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
-    NEXT_PUBLIC_SUPABASE_ANON_KEY=your_anon_key
-    SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
-```
-<Tip>Récupérez ces clés dans votre dashboard Supabase → Project Settings → API</Tip>
+    ```
+    
+    **Dépendances principales :**
+    - react 18.3.1
+    - vite 6.3.5
+    - @supabase/supabase-js 2.x
+    - react-router-dom 6.x
+    - tailwindcss 3.x
+    
+    <Tip>L'installation prend environ 2-3 minutes</Tip>
   </Step>
-  <Step title="Migrations de base de données">
-```bash
-    npm run db:push
-    npm run db:seed  # (optionnel) données de test
-```
+  
+  <Step title="Configurer Supabase">
+    ### Créer un projet Supabase
+    
+    1. Allez sur [supabase.com](https://supabase.com)
+    2. Créez un nouveau projet
+    3. Notez l'URL et la clé API (anon key)
+    
+    ### Créer le fichier `.env`
+    
+    ```bash
+    # À la racine du projet
+    touch .env
+    ```
+    
+    Ajoutez ces variables :
+    
+    ```bash
+    VITE_SUPABASE_URL=https://xxxxx.supabase.co
+    VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+    ```
+    
+    <Warning>
+      Ne commitez JAMAIS le fichier `.env` ! Il est déjà dans `.gitignore`
+    </Warning>
+    
+    ### Où trouver ces valeurs ?
+    
+    Dans votre dashboard Supabase :
+    - **Settings** → **API**
+    - Copiez **URL** et **anon public** key
   </Step>
-  <Step title="Lancer le serveur">
-```bash
+  
+  <Step title="Initialiser la base de données">
+    ### Exécuter les migrations
+    
+    Les migrations sont dans `supabase/migrations/`. Vous avez 2 options :
+    
+    **Option A : Via le Dashboard Supabase** (recommandé pour démarrer)
+    
+    1. Ouvrez **SQL Editor** dans votre dashboard
+    2. Exécutez les migrations dans l'ordre chronologique
+    3. Commencez par `20240101000000_initial_schema.sql` (exemple)
+    
+    **Option B : Via Supabase CLI** (si installé)
+    
+    ```bash
+    supabase db push
+    ```
+    
+    <Info>
+      Il y a **43 fichiers de migration** à exécuter. Le dashboard vous permet de les copier/coller un par un.
+    </Info>
+    
+    ### Créer les buckets Storage
+    
+    Dans **Storage** du dashboard :
+    
+    1. Créez un bucket `tool_logos`
+       - Public : ✅ Oui
+       - File size limit : 2MB
+       - Allowed MIME types : `image/*`
+    
+    2. Créez un bucket `site_assets`
+       - Public : ✅ Oui
+       - File size limit : 5MB
+       - Allowed MIME types : `image/*, video/*`
+  </Step>
+  
+  <Step title="Vérifier l'installation">
+    Testez la connexion Supabase :
+    
+    ```bash
     npm run dev
-```
-Ouvrez [http://localhost:3000](http://localhost:3000)
+    ```
+    
+    L'application devrait démarrer sur **http://localhost:5173**
+    
+    **Vérifications :**
+    - ✅ Page d'accueil s'affiche
+    - ✅ Catalogue d'outils charge (vide au début)
+    - ✅ Pas d'erreurs console liées à Supabase
   </Step>
 </Steps>
-Vérification
-Testez que tout fonctionne :
-<Tabs>
-  <Tab title="Interface">
-    - Page d'accueil accessible
-    - Connexion/inscription fonctionnelle
-    - Navigation fluide
-  </Tab>
-  <Tab title="API">
+
+---
+
+## Premier lancement
+
+### Accéder à l'interface
+
 ```bash
-    curl http://localhost:3000/api/tools
+npm run dev
 ```
-Devrait retourner une liste JSON (vide ou avec données de seed)
-  </Tab>
-</Tabs>
-Prochaines étapes
+
+**URLs disponibles :**
+- 🏠 **Home** : http://localhost:5173
+- 🔐 **Admin** : http://localhost:5173/admin
+- 📊 **Quiz** : http://localhost:5173/quiz/diagnostic (si créé)
+- 🔍 **Compare** : http://localhost:5173/compare
+
+---
+
+## Créer un compte admin
+
+Par défaut, Supabase désactive les inscriptions publiques. Pour créer un admin :
+
+### Via Dashboard Supabase
+
+1. Allez dans **Authentication** → **Users**
+2. Cliquez sur **Add user** → **Create new user**
+3. Entrez :
+   - Email : `admin@kitasso.com`
+   - Password : `votre_mot_de_passe_securise`
+4. Confirmez l'email si nécessaire
+
+### Se connecter
+
+1. Allez sur http://localhost:5173/admin
+2. Vous serez redirigé vers `/login`
+3. Entrez vos credentials
+4. Vous devriez accéder au dashboard admin
+
+<Tip>
+  Une fois connecté, votre session persiste dans localStorage. Pas besoin de se reconnecter à chaque refresh.
+</Tip>
+
+---
+
+## Ajouter des données de test
+
+### Option 1 : Manuellement via Admin Dashboard
+
+Une fois connecté en admin :
+
+1. **Créer des catégories**
+   - Allez dans l'onglet **Tools** du dashboard
+   - Créez des catégories (ex: "Communication", "Gestion", "Site Web")
+
+2. **Ajouter des outils**
+   - Cliquez sur **+ Nouvel outil**
+   - Remplissez le formulaire
+   - Uploadez un logo
+   - Assignez une catégorie
+   - Sauvegardez
+
+3. **Créer un workflow**
+   - Allez dans l'onglet **Workflows**
+   - Cliquez sur **+ Nouveau workflow**
+   - Définissez les étapes
+   - Publiez (status = active)
+
+### Option 2 : Via SQL (données de seed)
+
+Créez un fichier `seed.sql` :
+
+```sql
+-- Catégories
+INSERT INTO categories (name) VALUES
+  ('Communication'),
+  ('Gestion de projet'),
+  ('Site Web'),
+  ('Paiements');
+
+-- Outils
+INSERT INTO tools (name, description, pricing_tier, category_id, website_url) VALUES
+  ('Mailchimp', 'Plateforme email marketing', 'Freemium', 
+   (SELECT id FROM categories WHERE name = 'Communication'), 
+   'https://mailchimp.com'),
+  ('Trello', 'Gestion de projets visuels', 'Freemium',
+   (SELECT id FROM categories WHERE name = 'Gestion de projet'),
+   'https://trello.com');
+```
+
+Exécutez dans le **SQL Editor** de Supabase.
+
+---
+
+## Structure du projet
+
+Voici l'organisation du code :
+
+```
+kitasso/
+├── src/
+│   ├── api/                 # 🔌 API Layer (Supabase abstraction)
+│   │   ├── auth.ts
+│   │   ├── tools.ts
+│   │   ├── workflows.ts
+│   │   └── ...
+│   │
+│   ├── components/          # 🎨 Composants partagés
+│   │   ├── App/
+│   │   ├── forms/
+│   │   ├── modals/
+│   │   └── ui/
+│   │
+│   ├── features/            # 📦 Features métier
+│   │   ├── tools/
+│   │   ├── workflows/
+│   │   ├── tool-packs/
+│   │   └── quiz/
+│   │
+│   ├── hooks/               # 🪝 Custom hooks
+│   │   ├── useAppData.ts
+│   │   ├── useFavorites.ts
+│   │   └── ...
+│   │
+│   ├── lib/                 # 🛠️ Utilities
+│   │   ├── supabase.ts
+│   │   └── auth.tsx
+│   │
+│   ├── pages/               # 📄 Pages (routes)
+│   │   ├── Admin.tsx
+│   │   ├── Compare.tsx
+│   │   └── Login.tsx
+│   │
+│   ├── types/               # 📘 Types TypeScript
+│   │   ├── database.ts
+│   │   └── ...
+│   │
+│   └── utils/               # 🔧 Helpers
+│
+├── supabase/
+│   └── migrations/          # 📊 43 fichiers SQL
+│
+├── public/                  # 🖼️ Assets statiques
+│
+├── .env                     # 🔐 Variables d'environnement
+├── vite.config.ts           # ⚡ Config Vite
+├── tailwind.config.js       # 🎨 Config Tailwind
+└── package.json
+```
+
+<Card title="Comprendre l'architecture" icon="sitemap" href="/architecture/overview">
+  Documentation complète de l'organisation
+</Card>
+
+---
+
+## Commandes disponibles
+
+```bash
+# Développement
+npm run dev              # Lancer le serveur de dev (port 5173)
+
+# Build
+npm run build            # Build de production
+npm run preview          # Preview du build local
+
+# Quality
+npm run lint             # Linter ESLint
+npm run typecheck        # Vérification TypeScript
+
+# Tests
+npm test                 # Lancer les tests (Vitest)
+npm run test:watch       # Tests en mode watch
+npm run test:coverage    # Coverage report
+
+# Analyse
+npm run analyze          # Analyser la taille du bundle
+```
+
+---
+
+## Troubleshooting
+
+### Erreur : "Failed to fetch"
+
+**Cause :** Connexion Supabase échoue
+
+**Solutions :**
+1. Vérifiez que `.env` contient les bonnes valeurs
+2. Vérifiez que votre projet Supabase est actif
+3. Testez la connexion directement :
+   ```typescript
+   // Dans la console du navigateur
+   const { data } = await window.supabase.from('tools').select('*');
+   console.log(data);
+   ```
+
+### Erreur : "Row Level Security"
+
+**Cause :** Politiques RLS bloquent l'accès
+
+**Solution :**
+1. Vérifiez que RLS est activé sur toutes les tables
+2. Vérifiez que les policies sont créées
+3. Testez avec un utilisateur authentifié
+
+### Page admin vide
+
+**Cause :** Pas authentifié ou session expirée
+
+**Solution :**
+1. Reconnectez-vous via `/login`
+2. Vérifiez dans la console : `localStorage.getItem('supabase.auth.token')`
+3. Si null, créez un nouvel utilisateur admin
+
+### Images ne s'affichent pas
+
+**Cause :** Buckets Storage mal configurés
+
+**Solution :**
+1. Vérifiez que les buckets existent
+2. Vérifiez qu'ils sont **publics**
+3. Testez l'URL d'une image directement dans le navigateur
+
+---
+
+## Prochaines étapes
+
 <CardGroup cols={2}>
-  <Card title="Architecture" icon="sitemap" href="/architecture/overview">
+  <Card title="Explorer l'architecture" icon="sitemap" href="/architecture/overview">
     Comprendre l'organisation du code
   </Card>
+  
   <Card title="Créer votre premier outil" icon="wrench" href="/features/tools">
-    Guide pas à pas
+    Guide de la feature Tools
   </Card>
-  <Card title="API Reference" icon="code" href="/api/overview">
-    Documentation des endpoints
+  
+  <Card title="API Layer" icon="plug" href="/development/api-layer">
+    Utiliser l'abstraction Supabase
   </Card>
-  <Card title="Conventions" icon="book" href="/development/conventions">
-    Standards de code
+  
+  <Card title="Conventions de code" icon="book" href="/development/conventions">
+    Standards et bonnes pratiques
   </Card>
 </CardGroup>
-```
+
+---
+
+## Support
+
+Besoin d'aide ?
+
+- 📖 **Documentation** : Parcourez les sections ci-dessous
+- 💬 **GitHub Discussions** : Posez vos questions
+- 🐛 **Issues** : Signalez un bug
+- 📧 **Email** : contact@lucdidion.lu
