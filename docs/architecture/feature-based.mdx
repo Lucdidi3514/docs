@@ -1,0 +1,598 @@
+---
+title: 'Architecture Feature-Based'
+description: 'Organisation par domaine métier plutôt que par type technique'
+---
+
+## Philosophie
+
+Kit'Asso utilise une **architecture feature-based** : le code est organisé par **domaine métier** (outils, workflows, quiz) plutôt que par type technique (components, hooks, services).
+
+### ❌ Organisation traditionnelle (par type)
+
+```
+src/
+├── components/
+│   ├── ToolCard.tsx
+│   ├── ToolModal.tsx
+│   ├── ToolForm.tsx
+│   ├── WorkflowCard.tsx
+│   ├── WorkflowModal.tsx
+│   └── ...                    # 50+ fichiers mélangés
+├── hooks/
+│   ├── useTools.ts
+│   ├── useWorkflows.ts
+│   └── ...
+├── services/
+│   ├── toolsService.ts
+│   ├── workflowsService.ts
+│   └── ...
+```
+
+**Problèmes :**
+- Fichiers dispersés dans 5+ dossiers
+- Difficile de trouver le code lié à une feature
+- Couplage fort entre features
+- Suppression risquée d'une feature
+
+---
+
+### ✅ Organisation feature-based
+
+```
+src/
+├── features/
+│   ├── tools/                 # Tout ce qui concerne les outils
+│   │   ├── components/
+│   │   ├── hooks/
+│   │   ├── modals/
+│   │   ├── types/
+│   │   └── index.ts
+│   │
+│   ├── workflows/             # Tout ce qui concerne les workflows
+│   │   ├── components/
+│   │   ├── hooks/
+│   │   ├── modals/
+│   │   ├── types/
+│   │   └── index.ts
+│   │
+│   ├── tool-packs/            # Collections d'outils
+│   └── quiz/                  # Système de quiz
+│
+├── shared/                    # Code vraiment partagé
+│   ├── components/            # Composants UI génériques
+│   ├── hooks/                 # Hooks utilitaires
+│   └── utils/                 # Fonctions helpers
+│
+└── api/                       # Layer d'accès données
+    ├── tools.ts
+    ├── workflows.ts
+    └── ...
+```
+
+**Avantages :**
+- ✅ Isolation complète par feature
+- ✅ Facile à naviguer (tout dans un dossier)
+- ✅ Suppression safe d'une feature
+- ✅ Travail en équipe facilité
+- ✅ Tests colocalisés
+
+---
+
+## Structure d'une feature
+
+Chaque feature suit la même organisation :
+
+```
+features/[nom-feature]/
+├── components/            # Composants UI spécifiques
+│   ├── FeatureCard.tsx
+│   ├── FeatureList.tsx
+│   └── ...
+│
+├── hooks/                 # Logique métier
+│   ├── useFeatureData.ts
+│   ├── useFeatureFilters.ts
+│   └── ...
+│
+├── modals/                # Modals de la feature
+│   └── FeatureModal/
+│       ├── index.tsx
+│       ├── FeatureForm.tsx
+│       ├── FeaturePreview.tsx
+│       └── useFeatureModal.ts
+│
+├── types/                 # Types TypeScript
+│   └── index.ts
+│
+├── pages/                 # Pages (si applicable)
+│   └── FeaturePage.tsx
+│
+└── index.ts               # Barrel export
+```
+
+---
+
+## Exemple concret : Feature Tools
+
+```
+features/tools/
+├── modals/
+│   └── ToolModal/
+│       ├── index.tsx              # Container
+│       ├── ToolForm.tsx           # Formulaire d'édition
+│       ├── ToolPreview.tsx        # Aperçu détaillé
+│       ├── types.ts               # Types du modal
+│       └── useToolModal.ts        # Logique métier
+│
+└── index.ts                       # Exports publics
+```
+
+### Container (`index.tsx`)
+
+```typescript
+import { lazy, Suspense } from 'react';
+
+const ToolForm = lazy(() => import('./ToolForm'));
+const ToolPreview = lazy(() => import('./ToolPreview'));
+
+export function ToolModal({ toolId, mode, onClose }) {
+  const { tool, loading, handleSubmit } = useToolModal(toolId);
+  
+  if (loading) return <Spinner />;
+  
+  return (
+    <Modal onClose={onClose}>
+      <Suspense fallback={<Spinner />}>
+        {mode === 'edit' ? (
+          <ToolForm tool={tool} onSubmit={handleSubmit} />
+        ) : (
+          <ToolPreview tool={tool} />
+        )}
+      </Suspense>
+    </Modal>
+  );
+}
+```
+
+### Hook métier (`useToolModal.ts`)
+
+```typescript
+import { toolsApi } from '@/api';
+
+export function useToolModal(toolId?: string) {
+  const [tool, setTool] = useState<Tool | null>(null);
+  const [loading, setLoading] = useState(false);
+  
+  useEffect(() => {
+    if (toolId) {
+      loadTool(toolId);
+    }
+  }, [toolId]);
+  
+  const loadTool = async (id: string) => {
+    setLoading(true);
+    try {
+      const data = await toolsApi.getById(id);
+      setTool(data);
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  const handleSubmit = async (data: ToolUpdate) => {
+    if (toolId) {
+      await toolsApi.update(toolId, data);
+    } else {
+      await toolsApi.create(data);
+    }
+  };
+  
+  return { tool, loading, handleSubmit };
+}
+```
+
+### Barrel export (`index.ts`)
+
+```typescript
+// Exports publics uniquement
+export { ToolModal } from './modals/ToolModal';
+export { useToolModal } from './modals/ToolModal/useToolModal';
+export type { ToolModalProps } from './modals/ToolModal/types';
+
+// Les composants internes (ToolForm, ToolPreview) 
+// ne sont PAS exportés = encapsulation
+```
+
+---
+
+## Règles de dépendances
+
+### ✅ Autorisé
+
+```typescript
+// Feature → API Layer
+import { toolsApi } from '@/api';
+
+// Feature → Shared
+import { Button } from '@/shared/components/ui';
+import { useDebounce } from '@/shared/hooks';
+
+// Feature → Types
+import type { Tool } from '@/types/database';
+```
+
+### ❌ Interdit
+
+```typescript
+// Feature → Autre Feature
+import { WorkflowCard } from '@/features/workflows'; // ❌
+
+// Utilisez plutôt Shared si besoin de partager
+import { GenericCard } from '@/shared/components';
+```
+
+**Pourquoi ?**
+- Évite le couplage entre features
+- Permet la suppression safe
+- Force à identifier le code vraiment partagé
+
+---
+
+## Shared vs Features
+
+### Quand mettre dans `/shared` ?
+
+✅ **Shared** si :
+- Utilisé par **3+ features** différentes
+- Générique et sans logique métier
+- Composant UI de base (Button, Input, Modal)
+- Hook utilitaire (useDebounce, useLocalStorage)
+- Fonction helper (formatDate, sanitizeInput)
+
+**Exemples :**
+```
+shared/
+├── components/ui/
+│   ├── Button.tsx            # Utilisé partout
+│   ├── Modal.tsx             # Base pour tous les modals
+│   └── Input.tsx             # Form inputs
+│
+├── hooks/
+│   ├── useDebounce.ts        # Utilitaire
+│   └── useLocalStorage.ts    # Persistance
+│
+└── utils/
+    ├── formatters.ts         # Format dates, nombres
+    └── validators.ts         # Validation
+```
+
+### ❌ Features si :
+- Spécifique à **1 seule feature**
+- Contient de la logique métier
+- Dépend du domaine (ex: ToolCard avec prix, catégorie)
+
+**Exemples :**
+```
+features/tools/
+├── components/
+│   ├── ToolCard.tsx          # Affiche prix, catégorie, features
+│   └── ToolLogo.tsx          # Gère upload vers tool_logos bucket
+│
+└── hooks/
+    └── useToolFilters.ts     # Filtrage spécifique outils
+```
+
+---
+
+## Migration vers feature-based
+
+Si vous avez du code organisé par type, voici comment migrer :
+
+<Steps>
+  <Step title="Identifier les features">
+    Listez vos domaines métier :
+    - Tools (outils)
+    - Workflows (parcours)
+    - Tool Packs (collections)
+    - Quiz (diagnostic)
+  </Step>
+  
+  <Step title="Créer la structure">
+    ```bash
+    mkdir -p src/features/tools/{components,hooks,modals,types}
+    mkdir -p src/features/workflows/{components,hooks,modals,types}
+    mkdir -p src/features/tool-packs/{components,hooks,modals,types}
+    mkdir -p src/features/quiz/{components,hooks,modals,types}
+    ```
+  </Step>
+  
+  <Step title="Déplacer le code feature par feature">
+    Commencez par la plus petite feature :
+    
+    ```bash
+    # Exemple : migrer Tools
+    mv src/components/ToolCard.tsx src/features/tools/components/
+    mv src/components/ToolModal.tsx src/features/tools/modals/
+    mv src/hooks/useTools.ts src/features/tools/hooks/
+    ```
+  </Step>
+  
+  <Step title="Fixer les imports">
+    ```typescript
+    // Avant
+    import { ToolCard } from '@/components/ToolCard';
+    
+    // Après
+    import { ToolCard } from '@/features/tools';
+    ```
+  </Step>
+  
+  <Step title="Tester">
+    Vérifiez que tout fonctionne :
+    ```bash
+    npm run typecheck
+    npm run lint
+    npm test
+    ```
+  </Step>
+</Steps>
+
+---
+
+## Avantages concrets
+
+### 1. Navigation simplifiée
+
+**Avant (par type) :**
+- Chercher ToolCard → `src/components/ToolCard.tsx`
+- Chercher ToolModal → `src/components/ToolModal.tsx`
+- Chercher useTools → `src/hooks/useTools.ts`
+- Chercher toolsApi → `src/services/toolsService.ts`
+
+**Après (feature-based) :**
+- Tout dans `src/features/tools/` → 1 seul dossier à ouvrir
+
+---
+
+### 2. Suppression safe
+
+Besoin de retirer la feature Quiz ?
+
+```bash
+# Feature-based : suppression propre
+rm -rf src/features/quiz/
+
+# Mise à jour des routes
+# Suppression de la table quiz dans Supabase
+# C'est tout !
+```
+
+Avec organisation par type :
+- Chercher manuellement tous les fichiers liés au quiz
+- Risque d'oublier des fichiers
+- Imports cassés partout
+
+---
+
+### 3. Travail en équipe
+
+**Organisation par type :**
+- Dev A travaille sur Tools → modifie `src/components/`
+- Dev B travaille sur Workflows → modifie aussi `src/components/`
+- Conflits Git fréquents
+
+**Feature-based :**
+- Dev A dans `src/features/tools/`
+- Dev B dans `src/features/workflows/`
+- Zéro conflit
+
+---
+
+### 4. Tests colocalisés
+
+```
+features/tools/
+├── components/
+│   ├── ToolCard.tsx
+│   └── __tests__/
+│       └── ToolCard.spec.tsx
+│
+└── hooks/
+    ├── useToolFilters.ts
+    └── __tests__/
+        └── useToolFilters.spec.tsx
+```
+
+Tests à côté du code testé = facile à maintenir.
+
+---
+
+## Bonnes pratiques
+
+### 1. Exports publics explicites
+
+```typescript
+// features/tools/index.ts
+export { ToolCard } from './components/ToolCard';
+export { ToolModal } from './modals/ToolModal';
+export { useToolFilters } from './hooks/useToolFilters';
+
+// N'exportez PAS les composants internes
+// ToolForm, ToolPreview restent privés
+```
+
+---
+
+### 2. Types partagés dans /types
+
+Les types utilisés par **plusieurs features** vont dans `/types` :
+
+```typescript
+// types/database.ts
+export interface Tool {
+  id: string;
+  name: string;
+  // ...
+}
+
+// features/tools/types/index.ts
+export interface ToolFilters {
+  search: string;
+  pricing: string[];
+  category: string;
+}
+```
+
+---
+
+### 3. API Layer séparé
+
+L'accès aux données reste dans `/api` (pas dans les features) :
+
+```
+src/
+├── api/                    # Accès données
+│   ├── tools.ts
+│   └── workflows.ts
+│
+└── features/               # Logique métier + UI
+    ├── tools/
+    └── workflows/
+```
+
+**Pourquoi ?**
+- L'API peut être utilisée par plusieurs features
+- Facilite les tests (mock de l'API layer)
+- Abstraction Supabase centralisée
+
+<Card title="API Layer en détail" icon="plug" href="/architecture/api-layer">
+  Documentation complète
+</Card>
+
+---
+
+### 4. Pages dans /pages (routes)
+
+Les composants de route restent dans `/pages` :
+
+```
+src/
+├── pages/
+│   ├── Admin.tsx           # Route /admin
+│   ├── Compare.tsx         # Route /compare
+│   └── Login.tsx           # Route /login
+│
+└── features/
+    └── tools/
+        └── pages/
+            └── ToolsPage.tsx  # Si page dédiée tools
+```
+
+**Routing simple :**
+```typescript
+// router.tsx
+import Admin from './pages/Admin';
+import Compare from './pages/Compare';
+
+const routes = [
+  { path: '/admin', element: <Admin /> },
+  { path: '/compare', element: <Compare /> },
+];
+```
+
+---
+
+## Exemples du projet
+
+### Feature Tools
+
+```
+features/tools/
+└── modals/
+    └── ToolModal/
+        ├── index.tsx              # Container
+        ├── ToolForm.tsx           # Formulaire
+        ├── ToolPreview.tsx        # Preview
+        ├── types.ts               # Types
+        └── useToolModal.ts        # Hook
+```
+
+**Complexité :** Moyenne (modal avec form + preview)
+
+---
+
+### Feature Quiz
+
+```
+features/quiz/
+├── admin/                         # Admin components
+│   ├── QuizBuilder.tsx
+│   ├── QuestionEditor.tsx
+│   └── RecommendationRules.tsx
+│
+├── components/                    # Public components
+│   ├── QuizQuestion.tsx
+│   ├── QuizProgress.tsx
+│   └── QuizResults.tsx
+│
+├── hooks/
+│   ├── useQuiz.ts
+│   └── useQuizRecommendations.ts
+│
+└── pages/
+    └── QuizPage.tsx
+```
+
+**Complexité :** Élevée (admin + public + logique conditionnelle)
+
+---
+
+### Feature Tool Packs
+
+```
+features/tool-packs/
+└── modals/
+    └── PackModal/
+        ├── index.tsx
+        ├── PackForm.tsx
+        └── usePackModal.ts
+```
+
+**Complexité :** Simple (CRUD basique)
+
+---
+
+## Checklist feature-based
+
+Avant de créer une nouvelle feature :
+
+- [ ] Nom clair et métier (pas technique)
+- [ ] Structure complète créée (components, hooks, modals, types)
+- [ ] Barrel export (`index.ts`) configuré
+- [ ] Aucune dépendance vers d'autres features
+- [ ] Tests colocalisés dans `__tests__/`
+- [ ] Documentation dans cette doc Mintlify
+
+---
+
+## Ressources
+
+<CardGroup cols={2}>
+  <Card title="Architecture globale" icon="sitemap" href="/architecture/overview">
+    Vue d'ensemble du projet
+  </Card>
+  
+  <Card title="API Layer" icon="plug" href="/architecture/api-layer">
+    Abstraction Supabase
+  </Card>
+  
+  <Card title="Patterns" icon="code" href="/architecture/patterns">
+    Modals, forms, hooks
+  </Card>
+  
+  <Card title="Conventions" icon="book" href="/development/conventions">
+    Standards de code
+  </Card>
+</CardGroup>

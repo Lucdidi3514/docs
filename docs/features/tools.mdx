@@ -1,0 +1,470 @@
+---
+title: 'Feature Tools - Discovery & Comparaison'
+description: 'Catalogue de 100+ outils numériques pour associations'
+---
+
+## Vue d'ensemble
+
+La feature **Tools** est le cœur de Kit'Asso : un catalogue exhaustif d'outils numériques adaptés aux besoins des associations françaises.
+
+**Statistiques :**
+- 100+ outils référencés
+- 4 tiers de pricing (Gratuit, Freemium, Payant, Entreprise)
+- Système de catégorisation
+- Comparaison côte à côte
+- Favoris avec localStorage
+
+---
+
+## Architecture technique
+
+### Composants principaux
+
+```
+src/features/tools/
+├── modals/
+│   └── ToolModal/
+│       ├── index.tsx           # Container principal
+│       ├── ToolForm.tsx        # Formulaire d'édition
+│       ├── ToolPreview.tsx     # Aperçu détaillé
+│       ├── types.ts            # Types du modal
+│       └── useToolModal.ts     # Logique métier
+│
+src/components/sections/
+├── VirtualizedToolsGrid.tsx    # Grille virtualisée (react-window)
+└── ToolCard.tsx                # Carte outil individuelle
+```
+
+### API Layer
+
+```typescript
+// src/api/tools.ts
+export const toolsApi = {
+  list: () => Promise<EnhancedTool[]>,
+  getById: (id: string) => Promise<EnhancedTool>,
+  create: (data: ToolInsert) => Promise<Tool>,
+  update: (id: string, data: ToolUpdate) => Promise<Tool>,
+  delete: (id: string) => Promise<void>,
+  uploadLogo: (file: File) => Promise<string>
+};
+```
+
+---
+
+## Fonctionnalités détaillées
+
+### 1. Recherche avancée
+
+**Implémentation :** `src/hooks/useToolFilters.ts`
+
+```typescript
+const {
+  filteredTools,
+  searchTerm,
+  setSearchTerm,
+  selectedPricing,
+  setSelectedPricing,
+  selectedCategory,
+  setSelectedCategory
+} = useToolFilters(tools);
+```
+
+**Caractéristiques :**
+- Debounce de 300ms pour la recherche texte
+- Filtrage multi-critères (pricing + catégorie)
+- Combinaison ET des filtres
+- Performance optimisée avec useMemo
+
+**Exemple d'utilisation :**
+```tsx
+<SearchBar
+  value={searchTerm}
+  onChange={setSearchTerm}
+  placeholder="Rechercher un outil..."
+/>
+
+<PricingFilter
+  value={selectedPricing}
+  onChange={setSelectedPricing}
+  options={['Gratuit', 'Freemium', 'Payant', 'Entreprise']}
+/>
+```
+
+---
+
+### 2. Grille virtualisée
+
+**Composant :** `VirtualizedToolsGrid.tsx`
+
+**Pourquoi virtualiser ?**
+- Affichage de 100+ outils sans lag
+- Rendu uniquement des éléments visibles
+- Mémoire optimisée
+- Scroll fluide même sur mobile
+
+**Configuration :**
+```typescript
+<FixedSizeGrid
+  columnCount={getColumnCount()} // 1-4 selon viewport
+  rowCount={Math.ceil(tools.length / columnCount)}
+  columnWidth={320}
+  rowHeight={380}
+  height={800}
+  width={containerWidth}
+>
+  {({ columnIndex, rowIndex, style }) => (
+    <ToolCard tool={tools[index]} style={style} />
+  )}
+</FixedSizeGrid>
+```
+
+**Performance :**
+- 1000 outils = même perf que 10
+- FPS constant à 60
+- Utilisation mémoire : ~20MB (vs 200MB sans virtualisation)
+
+---
+
+### 3. Mode comparaison
+
+**Route :** `/compare`
+
+**Logique :** `src/hooks/useToolComparison.ts`
+
+```typescript
+const {
+  selectedTools,
+  addToComparison,
+  removeFromComparison,
+  clearComparison,
+  canAddMore
+} = useToolComparison();
+```
+
+**Fonctionnement :**
+- Sélection max : 2 outils
+- Affichage côte à côte
+- Comparaison des caractéristiques :
+  - Pricing
+  - Catégorie
+  - Features (tags)
+  - Description
+  - Liens externes
+
+**UI :**
+```tsx
+<ComparisonView>
+  <ToolColumn tool={selectedTools[0]} />
+  <Divider />
+  <ToolColumn tool={selectedTools[1]} />
+</ComparisonView>
+```
+
+---
+
+### 4. Système de favoris
+
+**Hook :** `src/hooks/useFavorites.ts`
+
+**Stockage :** LocalStorage (clé : `kitasso_favorites`)
+
+```typescript
+const {
+  favorites,      // Set<string> des IDs
+  addFavorite,    // (id: string) => void
+  removeFavorite, // (id: string) => void
+  toggleFavorite, // (id: string) => void
+  isFavorite,     // (id: string) => boolean
+  count           // number
+} = useFavorites();
+```
+
+**Persistance :**
+- Sauvegarde automatique à chaque changement
+- Chargement au mount
+- Validation des IDs
+- Gestion des erreurs (quota storage)
+
+**Exemple d'intégration :**
+```tsx
+<Button
+  onClick={() => toggleFavorite(tool.id)}
+  variant={isFavorite(tool.id) ? 'solid' : 'outline'}
+>
+  <Heart fill={isFavorite(tool.id) ? 'currentColor' : 'none'} />
+</Button>
+```
+
+---
+
+### 5. Upload de logos
+
+**API :** `toolsApi.uploadLogo(file)`
+
+**Bucket Supabase :** `tool_logos`
+
+**Workflow :**
+```typescript
+// 1. Validation
+if (!file.type.startsWith('image/')) {
+  throw new Error('Format invalide');
+}
+if (file.size > 2 * 1024 * 1024) {
+  throw new Error('Fichier trop volumineux (max 2MB)');
+}
+
+// 2. Upload vers Supabase Storage
+const fileName = `${uuidv4()}-${file.name}`;
+const { data, error } = await supabase.storage
+  .from('tool_logos')
+  .upload(fileName, file);
+
+// 3. Récupération URL publique
+const { data: { publicUrl } } = supabase.storage
+  .from('tool_logos')
+  .getPublicUrl(fileName);
+
+return publicUrl;
+```
+
+**Intégration dans formulaire :**
+```tsx
+<FileInput
+  accept="image/*"
+  onChange={async (file) => {
+    setUploading(true);
+    const url = await toolsApi.uploadLogo(file);
+    setValue('logo_url', url);
+    setUploading(false);
+  }}
+/>
+```
+
+---
+
+## Base de données
+
+### Table `tools`
+
+```sql
+CREATE TABLE tools (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  name TEXT UNIQUE NOT NULL,
+  description TEXT NOT NULL,
+  pricing_tier TEXT CHECK (pricing_tier IN (
+    'Gratuit', 'Freemium', 'Payant', 'Entreprise'
+  )),
+  category_id UUID REFERENCES categories(id),
+  logo_url TEXT,
+  website_url TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+```
+
+### Relations
+
+**Catégorie (Many-to-One) :**
+```sql
+SELECT 
+  tools.*,
+  categories.name as category_name
+FROM tools
+LEFT JOIN categories ON tools.category_id = categories.id;
+```
+
+**Features (Many-to-Many via `tool_features`) :**
+```sql
+SELECT 
+  tools.*,
+  ARRAY_AGG(filters.value) as features
+FROM tools
+LEFT JOIN tool_features ON tools.id = tool_features.tool_id
+LEFT JOIN filters ON tool_features.filter_id = filters.id
+GROUP BY tools.id;
+```
+
+### RLS Policies
+
+```sql
+-- Public : lecture seule
+CREATE POLICY "Allow public read on tools"
+  ON tools FOR SELECT
+  TO public
+  USING (true);
+
+-- Authenticated : CRUD complet
+CREATE POLICY "Allow authenticated insert on tools"
+  ON tools FOR INSERT
+  TO authenticated
+  WITH CHECK (true);
+
+CREATE POLICY "Allow authenticated update on tools"
+  ON tools FOR UPDATE
+  TO authenticated
+  USING (true) WITH CHECK (true);
+
+CREATE POLICY "Allow authenticated delete on tools"
+  ON tools FOR DELETE
+  TO authenticated
+  USING (true);
+```
+
+---
+
+## Types TypeScript
+
+```typescript
+// src/types/database.ts (généré par Supabase)
+export interface Tool {
+  id: string;
+  name: string;
+  description: string;
+  pricing_tier: 'Gratuit' | 'Freemium' | 'Payant' | 'Entreprise';
+  category_id: string;
+  logo_url: string | null;
+  website_url: string | null;
+  created_at: string;
+}
+
+// src/api/types.ts (enrichi)
+export interface EnhancedTool extends Tool {
+  category_name: string;
+  features: string[];
+}
+
+export interface ToolInsert {
+  name: string;
+  description: string;
+  pricing_tier: Tool['pricing_tier'];
+  category_id: string;
+  logo_url?: string;
+  website_url?: string;
+}
+
+export type ToolUpdate = Partial<ToolInsert>;
+```
+
+---
+
+## Testing
+
+### Tests API
+
+```typescript
+// src/api/__tests__/tools.spec.ts
+describe('toolsApi', () => {
+  it('should list all tools', async () => {
+    const tools = await toolsApi.list();
+    expect(tools).toBeInstanceOf(Array);
+    expect(tools[0]).toHaveProperty('category_name');
+  });
+
+  it('should create a tool', async () => {
+    const newTool = {
+      name: 'Test Tool',
+      description: 'Description',
+      pricing_tier: 'Gratuit',
+      category_id: 'uuid-here'
+    };
+    const tool = await toolsApi.create(newTool);
+    expect(tool.name).toBe('Test Tool');
+  });
+});
+```
+
+### Tests Hooks
+
+```typescript
+// src/hooks/__tests__/useFavorites.spec.ts
+describe('useFavorites', () => {
+  it('should add to favorites', () => {
+    const { result } = renderHook(() => useFavorites());
+    
+    act(() => {
+      result.current.addFavorite('tool-1');
+    });
+    
+    expect(result.current.isFavorite('tool-1')).toBe(true);
+    expect(result.current.count).toBe(1);
+  });
+});
+```
+
+---
+
+## Bonnes pratiques
+
+### ✅ À faire
+
+```typescript
+// Toujours passer par l'API layer
+import { toolsApi } from '@/api';
+const tools = await toolsApi.list();
+
+// Gérer les erreurs
+try {
+  await toolsApi.create(data);
+} catch (error) {
+  if (error instanceof ApiError) {
+    // Erreur typée
+  }
+}
+
+// Valider avec Zod
+const schema = z.object({
+  name: z.string().min(1),
+  description: z.string().min(10)
+});
+```
+
+### ❌ À éviter
+
+```typescript
+// NE PAS appeler Supabase directement
+const { data } = await supabase.from('tools').select('*');
+
+// NE PAS ignorer les erreurs
+await toolsApi.create(data); // Sans try/catch
+
+// NE PAS utiliser 'any'
+const tools: any[] = await toolsApi.list();
+```
+
+---
+
+## Performance
+
+**Métriques cibles :**
+- Temps de chargement initial : < 2s
+- Temps de recherche : < 100ms
+- FPS scroll : 60
+- Mémoire utilisée : < 50MB
+
+**Optimisations :**
+- Virtualisation avec react-window
+- Debounce sur recherche (300ms)
+- Memoization avec React.memo
+- Lazy loading des images
+- Code splitting du modal admin
+
+---
+
+## Prochaines étapes
+
+<CardGroup cols={2}>
+  <Card title="Workflows" icon="route" href="/features/workflows">
+    Parcours guidés étape par étape
+  </Card>
+  
+  <Card title="Tool Packs" icon="box" href="/features/tool-packs">
+    Collections curées d'outils
+  </Card>
+  
+  <Card title="API Layer" icon="plug" href="/development/api-layer">
+    Comprendre l'architecture API
+  </Card>
+  
+  <Card title="Testing" icon="flask" href="/development/testing">
+    Écrire des tests pour vos features
+  </Card>
+</CardGroup>
