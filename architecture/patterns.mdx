@@ -1,6 +1,6 @@
 ---
-title: 'Patterns de code'
-description: 'Modals, forms, routes et hooks - standards et bonnes pratiques'
+title: "Patterns de code"
+description: "Modals, forms, routes et hooks : standards et bonnes pratiques"
 ---
 
 ## Vue d'ensemble
@@ -67,6 +67,7 @@ export function ToolModal({ toolId, mode, onClose }: ToolModalProps) {
 ```
 
 **Responsabilités :**
+
 - Orchestration (form vs preview)
 - Lazy loading des composants lourds
 - Gestion des états de chargement
@@ -158,6 +159,7 @@ export default ToolForm;
 ```
 
 **Responsabilités :**
+
 - Validation avec Zod
 - Gestion des inputs
 - Affichage des erreurs
@@ -222,6 +224,7 @@ export function useToolModal(toolId?: string) {
 ```
 
 **Responsabilités :**
+
 - Chargement des données
 - Appels API
 - Gestion des erreurs
@@ -243,11 +246,11 @@ export interface ToolModalProps {
 
 ### Avantages du pattern
 
-✅ **Separation of Concerns** : UI, logique, data séparés  
-✅ **Testabilité** : Chaque partie testable indépendamment  
-✅ **Réutilisabilité** : Form peut être utilisé ailleurs  
-✅ **Performance** : Lazy loading des composants lourds  
-✅ **Maintenabilité** : Facile à comprendre et modifier  
+✅ **Separation of Concerns** : UI, logique, data séparés\
+✅ **Testabilité** : Chaque partie testable indépendamment\
+✅ **Réutilisabilité** : Form peut être utilisé ailleurs\
+✅ **Performance** : Lazy loading des composants lourds\
+✅ **Maintenabilité** : Facile à comprendre et modifier
 
 ---
 
@@ -610,32 +613,36 @@ export function QuizPage() {
 Avant de créer un nouveau composant complexe :
 
 ### Modal
-- [ ] Container avec lazy loading
-- [ ] Form séparé avec React Hook Form + Zod
-- [ ] Hook métier avec logique isolée
-- [ ] Types définis dans types.ts
-- [ ] Preview component si besoin
+
+- Container avec lazy loading
+- Form séparé avec React Hook Form + Zod
+- Hook métier avec logique isolée
+- Types définis dans types.ts
+- Preview component si besoin
 
 ### Hook custom
-- [ ] Nom commence par `use`
-- [ ] Return objet avec noms explicites
-- [ ] Cleanup dans useEffect si nécessaire
-- [ ] Types de retour explicites
-- [ ] Documenté avec JSDoc
+
+- Nom commence par `use`
+- Return objet avec noms explicites
+- Cleanup dans useEffect si nécessaire
+- Types de retour explicites
+- Documenté avec JSDoc
 
 ### Form
-- [ ] Schema Zod défini
-- [ ] Validation côté client
-- [ ] Gestion erreurs affichée
-- [ ] Loading state sur submit
-- [ ] Accessible (labels, ARIA)
+
+- Schema Zod défini
+- Validation côté client
+- Gestion erreurs affichée
+- Loading state sur submit
+- Accessible (labels, ARIA)
 
 ### Route
-- [ ] Lazy loading si page lourde
-- [ ] Protected si nécessite auth
-- [ ] Error boundary
-- [ ] Loading state
-- [ ] Meta tags SEO
+
+- Lazy loading si pages lourdes
+- Protected si nécessite auth
+- Error boundary
+- Loading state
+- Meta tags SEO
 
 ---
 
@@ -645,15 +652,12 @@ Avant de créer un nouveau composant complexe :
   <Card title="Feature-Based" icon="layer-group" href="/architecture/feature-based">
     Organisation du code
   </Card>
-  
   <Card title="API Layer" icon="plug" href="/architecture/api-layer">
     Abstraction Supabase
   </Card>
-  
   <Card title="Hooks" icon="hook" href="/development/hooks">
     Guide des hooks custom
   </Card>
-  
   <Card title="Components" icon="puzzle-piece" href="/development/components">
     Composants partagés
   </Card>
