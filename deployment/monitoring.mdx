@@ -1,0 +1,637 @@
+---
+title: 'Monitoring & Logs'
+description: 'Surveillance de la production et gestion des erreurs'
+---
+
+## Vue d'ensemble
+
+Le monitoring de Kit'Asso couvre 3 niveaux :
+
+<CardGroup cols={3}>
+  <Card title="Frontend" icon="browser">
+    Netlify Analytics + Console logs
+  </Card>
+  
+  <Card title="Backend" icon="database">
+    Supabase Dashboard + Logs
+  </Card>
+  
+  <Card title="Application" icon="bug">
+    Custom logging + Error tracking
+  </Card>
+</CardGroup>
+
+---
+
+## Monitoring Frontend (Netlify)
+
+### Build Logs
+
+**Accès :** Netlify Dashboard → **Deploys** → Cliquer sur un deploy
+
+**Informations :**
+- Temps de build
+- Dépendances installées
+- Warnings TypeScript
+- Bundle size
+- Deploy status
+
+**Erreurs courantes :**
+
+```bash
+# Build failed
+Error: Cannot find module '@/api'
+→ Vérifier les imports et paths
+
+# Out of memory
+JavaScript heap out of memory
+→ Ajouter NODE_OPTIONS=--max-old-space-size=4096
+
+# Environment variable missing
+ReferenceError: process is not defined
+→ Vérifier VITE_SUPABASE_URL dans settings
+```
+
+---
+
+### Function Logs
+
+Si vous utilisez Netlify Functions :
+
+**Accès :** Netlify Dashboard → **Functions** → Cliquer sur une function
+
+**Logs en temps réel :**
+```bash
+netlify functions:log hello --live
+```
+
+---
+
+### Analytics (optionnel, payant)
+
+**Netlify Analytics** fournit :
+- Visites uniques
+- Pages vues
+- Sources de trafic
+- Bande passante
+- Sans cookies (RGPD-friendly)
+
+**Prix :** ~9$/mois
+
+---
+
+## Monitoring Backend (Supabase)
+
+### Database Health
+
+**Dashboard** → **Database** → **Health**
+
+**Métriques clés :**
+
+<CardGroup cols={2}>
+  <Card title="CPU Usage">
+    **Seuil :** < 80%
+    
+    Si > 90% :
+    - Optimiser les queries
+    - Ajouter des indexes
+    - Upgrader le plan
+  </Card>
+  
+  <Card title="Memory Usage">
+    **Seuil :** < 80%
+    
+    Si > 90% :
+    - Réduire les connections
+    - Optimiser les queries
+    - Upgrader le plan
+  </Card>
+  
+  <Card title="Disk Usage">
+    **Seuil :** < 80%
+    
+    Si > 90% :
+    - Archiver vieilles données
+    - Supprimer fichiers inutilisés
+    - Upgrader le plan
+  </Card>
+  
+  <Card title="Connections">
+    **Limite Free :** 60
+    
+    Si proche de la limite :
+    - Vérifier les leaks
+    - Optimiser le pooling
+    - Utiliser connection pooler
+  </Card>
+</CardGroup>
+
+---
+
+### API Logs
+
+**Dashboard** → **Logs** → Filtrer par type
+
+**Types de logs :**
+
+```sql
+-- Requêtes API
+SELECT * FROM logs WHERE type = 'api'
+
+-- Erreurs uniquement
+SELECT * FROM logs WHERE status >= 400
+
+-- Logs Auth
+SELECT * FROM logs WHERE type = 'auth'
+
+-- Logs Storage
+SELECT * FROM logs WHERE type = 'storage'
+```
+
+**Analyse des erreurs :**
+
+```sql
+-- Top 10 erreurs
+SELECT 
+  error_message,
+  COUNT(*) as count
+FROM logs
+WHERE status >= 400
+GROUP BY error_message
+ORDER BY count DESC
+LIMIT 10;
+```
+
+---
+
+### Query Performance
+
+**Dashboard** → **Database** → **Query Performance**
+
+**Slow queries :**
+
+```sql
+SELECT 
+  query,
+  calls,
+  total_time,
+  mean_time,
+  max_time
+FROM pg_stat_statements
+ORDER BY total_time DESC
+LIMIT 20;
+```
+
+**Optimisation :**
+
+1. **Identifier la query lente**
+   ```sql
+   EXPLAIN ANALYZE
+   SELECT * FROM tools
+   WHERE category_id = 'xxx';
+   ```
+
+2. **Ajouter un index si manquant**
+   ```sql
+   CREATE INDEX idx_tools_category 
+   ON tools(category_id);
+   ```
+
+3. **Vérifier l'amélioration**
+   ```sql
+   EXPLAIN ANALYZE
+   -- Re-run la même query
+   ```
+
+---
+
+### Storage Usage
+
+**Dashboard** → **Storage**
+
+**Métriques :**
+- Nombre de fichiers
+- Taille totale utilisée
+- Bande passante consommée
+
+**Nettoyer les fichiers orphelins :**
+
+```typescript
+// Script de nettoyage (à exécuter manuellement)
+import { supabase } from './supabase';
+
+async function cleanOrphanedLogos() {
+  // 1. Récupérer tous les logos dans Storage
+  const { data: files } = await supabase.storage
+    .from('tool_logos')
+    .list();
+  
+  // 2. Récupérer tous les logo_url dans tools
+  const { data: tools } = await supabase
+    .from('tools')
+    .select('logo_url');
+  
+  const usedUrls = new Set(
+    tools.map(t => t.logo_url).filter(Boolean)
+  );
+  
+  // 3. Supprimer les fichiers non utilisés
+  for (const file of files) {
+    const publicUrl = supabase.storage
+      .from('tool_logos')
+      .getPublicUrl(file.name).data.publicUrl;
+    
+    if (!usedUrls.has(publicUrl)) {
+      await supabase.storage
+        .from('tool_logos')
+        .remove([file.name]);
+      console.log(`Deleted orphaned file: ${file.name}`);
+    }
+  }
+}
+```
+
+---
+
+## Logging Application
+
+### Utility Logger
+
+**Fichier :** `src/utils/logger.ts`
+
+```typescript
+type LogLevel = 'info' | 'warn' | 'error';
+
+interface LogEntry {
+  level: LogLevel;
+  message: string;
+  context?: Record<string, unknown>;
+  timestamp: string;
+}
+
+class Logger {
+  private isDev = import.meta.env.DEV;
+  
+  private log(level: LogLevel, message: string, context?: Record<string, unknown>) {
+    const entry: LogEntry = {
+      level,
+      message,
+      context,
+      timestamp: new Date().toISOString(),
+    };
+    
+    // Console en dev
+    if (this.isDev) {
+      const method = level === 'error' ? 'error' : level === 'warn' ? 'warn' : 'log';
+      console[method](`[${level.toUpperCase()}]`, message, context || '');
+    }
+    
+    // En prod : envoyer à un service externe (future)
+    if (!this.isDev && level === 'error') {
+      this.sendToErrorTracking(entry);
+    }
+  }
+  
+  info(message: string, context?: Record<string, unknown>) {
+    this.log('info', message, context);
+  }
+  
+  warn(message: string, context?: Record<string, unknown>) {
+    this.log('warn', message, context);
+  }
+  
+  error(message: string, context?: Record<string, unknown>) {
+    this.log('error', message, context);
+  }
+  
+  apiCall(endpoint: string, method: string, status: number, duration: number) {
+    this.info('API Call', {
+      endpoint,
+      method,
+      status,
+      duration,
+    });
+  }
+  
+  private sendToErrorTracking(entry: LogEntry) {
+    // Future : Sentry, LogRocket, etc.
+    // fetch('https://error-tracking-service.com/log', {
+    //   method: 'POST',
+    //   body: JSON.stringify(entry),
+    // });
+  }
+}
+
+export const logger = new Logger();
+```
+
+---
+
+### Utilisation dans le code
+
+```typescript
+// API Layer
+import { logger } from '@/utils/logger';
+
+export const toolsApi = {
+  async list() {
+    const start = Date.now();
+    
+    try {
+      const { data, error } = await supabase
+        .from('tools')
+        .select('*');
+      
+      if (error) throw error;
+      
+      const duration = Date.now() - start;
+      logger.apiCall('/api/tools', 'GET', 200, duration);
+      
+      return data;
+    } catch (error) {
+      logger.error('Failed to fetch tools', {
+        error: error.message,
+        stack: error.stack,
+      });
+      throw error;
+    }
+  },
+};
+```
+
+```typescript
+// Dans un composant
+import { logger } from '@/utils/logger';
+
+function ToolsList() {
+  useEffect(() => {
+    logger.info('ToolsList mounted');
+    
+    return () => {
+      logger.info('ToolsList unmounted');
+    };
+  }, []);
+  
+  const handleError = (error: Error) => {
+    logger.error('User action failed', {
+      component: 'ToolsList',
+      action: 'delete',
+      error: error.message,
+    });
+  };
+}
+```
+
+---
+
+## Error Tracking (Future)
+
+### Sentry Integration
+
+**Installation :**
+
+```bash
+npm install @sentry/react @sentry/vite-plugin
+```
+
+**Configuration :**
+
+```typescript
+// src/main.tsx
+import * as Sentry from '@sentry/react';
+
+if (import.meta.env.PROD) {
+  Sentry.init({
+    dsn: import.meta.env.VITE_SENTRY_DSN,
+    environment: 'production',
+    integrations: [
+      new Sentry.BrowserTracing(),
+      new Sentry.Replay(),
+    ],
+    tracesSampleRate: 0.1,
+    replaysSessionSampleRate: 0.1,
+    replaysOnErrorSampleRate: 1.0,
+  });
+}
+```
+
+**Error Boundary avec Sentry :**
+
+```typescript
+import * as Sentry from '@sentry/react';
+
+function App() {
+  return (
+    <Sentry.ErrorBoundary fallback={<ErrorFallback />}>
+      <Router />
+    </Sentry.ErrorBoundary>
+  );
+}
+```
+
+**Avantages :**
+- Stack traces complètes
+- User context (email, user_id)
+- Breadcrumbs (actions avant l'erreur)
+- Session replays
+- Performance monitoring
+
+---
+
+## Alertes & Notifications
+
+### Uptime Monitoring
+
+**Services recommandés :**
+- **UptimeRobot** (gratuit) : Ping toutes les 5 min
+- **Pingdom** (payant) : Monitoring avancé
+- **Better Uptime** : Incidents & status page
+
+**Configuration UptimeRobot :**
+
+1. **Monitor type:** HTTP(s)
+2. **URL:** `https://kitasso.netlify.app`
+3. **Monitoring interval:** 5 minutes
+4. **Alert contacts:** Email, Slack, Discord
+
+**Alertes recommandées :**
+- Site down (> 30s timeout)
+- Status code 500
+- SSL certificate expiration
+
+---
+
+### Slack/Discord Notifications
+
+**Webhook Netlify → Slack :**
+
+1. **Netlify Settings** → **Build & deploy** → **Deploy notifications**
+2. **Add notification** → **Slack**
+3. Choisir les événements :
+   - Deploy started
+   - Deploy succeeded
+   - Deploy failed
+
+**Format message :**
+```
+🚀 Deploy succeeded
+Branch: main
+Duration: 2m 15s
+URL: https://kitasso.netlify.app
+```
+
+---
+
+## Performance Monitoring
+
+### Web Vitals
+
+Trackez les Core Web Vitals dans l'app :
+
+```typescript
+// src/utils/reportWebVitals.ts
+import { onCLS, onFID, onFCP, onLCP, onTTFB } from 'web-vitals';
+
+function sendToAnalytics(metric: Metric) {
+  // Envoyer à Google Analytics, Plausible, etc.
+  console.log(metric);
+}
+
+export function reportWebVitals() {
+  onCLS(sendToAnalytics);
+  onFID(sendToAnalytics);
+  onFCP(sendToAnalytics);
+  onLCP(sendToAnalytics);
+  onTTFB(sendToAnalytics);
+}
+```
+
+```typescript
+// src/main.tsx
+import { reportWebVitals } from './utils/reportWebVitals';
+
+reportWebVitals();
+```
+
+**Seuils cibles :**
+- **LCP** (Largest Contentful Paint) : < 2.5s
+- **FID** (First Input Delay) : < 100ms
+- **CLS** (Cumulative Layout Shift) : < 0.1
+
+---
+
+### Bundle Size Monitoring
+
+Utilisez le plugin Vite :
+
+```typescript
+// vite.config.ts
+import { visualizer } from 'rollup-plugin-visualizer';
+
+export default {
+  plugins: [
+    visualizer({
+      filename: './dist/stats.html',
+      open: false,
+    }),
+  ],
+};
+```
+
+**Après build :**
+```bash
+npm run build
+open dist/stats.html
+```
+
+**Surveillez :**
+- Total bundle size (target < 500KB gzipped)
+- Chunks trop gros
+- Dépendances inutilisées
+
+---
+
+## Checklist Monitoring
+
+### Quotidien
+
+- [ ] Vérifier que le site est up (UptimeRobot)
+- [ ] Consulter les erreurs Sentry (si configuré)
+- [ ] Vérifier les logs Supabase pour erreurs 500
+
+### Hebdomadaire
+
+- [ ] Analyser les Web Vitals
+- [ ] Vérifier la Database Health (CPU, Memory, Disk)
+- [ ] Review des slow queries
+- [ ] Vérifier le Storage usage
+- [ ] Consulter les Deploy logs Netlify
+
+### Mensuel
+
+- [ ] Analyser les tendances d'usage
+- [ ] Review des coûts (Netlify bandwidth, Supabase DB)
+- [ ] Optimiser les queries lentes
+- [ ] Nettoyer les fichiers Storage orphelins
+- [ ] Audit de sécurité (dépendances obsolètes)
+
+---
+
+## Dashboard Custom (Future)
+
+Créez un dashboard centralisé :
+
+```typescript
+// features/monitoring/MonitoringDashboard.tsx
+export function MonitoringDashboard() {
+  const { data: health } = useSupabaseHealth();
+  const { data: errors } = useRecentErrors();
+  const { data: vitals } = useWebVitals();
+  
+  return (
+    <div className="grid grid-cols-3 gap-4">
+      <MetricCard
+        title="Database CPU"
+        value={health.cpu}
+        unit="%"
+        status={health.cpu > 80 ? 'danger' : 'success'}
+      />
+      
+      <MetricCard
+        title="Recent Errors"
+        value={errors.count}
+        status={errors.count > 10 ? 'warning' : 'success'}
+      />
+      
+      <MetricCard
+        title="LCP"
+        value={vitals.lcp}
+        unit="ms"
+        status={vitals.lcp > 2500 ? 'danger' : 'success'}
+      />
+    </div>
+  );
+}
+```
+
+---
+
+## Ressources
+
+<CardGroup cols={2}>
+  <Card title="Netlify Monitoring" icon="chart-line" href="https://docs.netlify.com/monitor-sites/analytics/">
+    Analytics & Logs
+  </Card>
+  
+  <Card title="Supabase Monitoring" icon="database" href="https://supabase.com/docs/guides/platform/metrics">
+    Database Health & Logs
+  </Card>
+  
+  <Card title="Web Vitals" icon="gauge" href="https://web.dev/vitals/">
+    Core Web Vitals Guide
+  </Card>
+  
+  <Card title="Sentry Docs" icon="bug" href="https://docs.sentry.io/platforms/javascript/guides/react/">
+    Error Tracking
+  </Card>
+</CardGroup>

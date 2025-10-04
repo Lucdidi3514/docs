@@ -1,0 +1,385 @@
+---
+title: 'Déploiement Netlify'
+description: 'Configuration et déploiement sur Netlify'
+---
+
+## Prérequis
+
+<Check>Compte Netlify créé ([S'inscrire](https://app.netlify.com/signup))</Check>
+<Check>Repository Git configuré (GitHub, GitLab, Bitbucket)</Check>
+<Check>Build de production fonctionnel localement</Check>
+<Check>Variables d'environnement Supabase prêtes</Check>
+
+---
+
+## Configuration du projet
+
+### Fichier `netlify.toml`
+
+Créez ce fichier à la racine du projet :
+
+```toml
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/*.js"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/*.css"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+```
+
+**Explications :**
+- `command` : Commande de build Vite
+- `publish` : Dossier de sortie
+- `redirects` : SPA routing (toutes les routes → index.html)
+- `headers` : Cache agressif pour assets avec hash
+
+---
+
+## Déploiement initial
+
+### Via Netlify Dashboard
+
+<Steps>
+  <Step title="Connecter le repository">
+    1. Allez sur [app.netlify.com](https://app.netlify.com)
+    2. Cliquez sur **"Add new site"** → **"Import an existing project"**
+    3. Choisissez votre provider Git (GitHub recommandé)
+    4. Sélectionnez le repository `kitasso`
+  </Step>
+  
+  <Step title="Configurer le build">
+    Netlify détecte automatiquement Vite, mais vérifiez :
+    
+    - **Branch to deploy:** `main`
+    - **Build command:** `npm run build`
+    - **Publish directory:** `dist`
+    - **Node version:** 18 ou supérieur
+  </Step>
+  
+  <Step title="Ajouter les variables d'environnement">
+    Dans **Site settings** → **Build & deploy** → **Environment** :
+    
+    ```bash
+    VITE_SUPABASE_URL=https://xxxxx.supabase.co
+    VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+    ```
+    
+    <Warning>
+      N'ajoutez JAMAIS la service role key côté frontend
+    </Warning>
+  </Step>
+  
+  <Step title="Déployer">
+    Cliquez sur **"Deploy site"**
+    
+    Netlify va :
+    1. Cloner le repository
+    2. Installer les dépendances (`npm install`)
+    3. Exécuter le build (`npm run build`)
+    4. Publier le dossier `dist`
+    
+    ⏱️ **Durée :** 2-3 minutes
+  </Step>
+</Steps>
+
+---
+
+## Déploiements automatiques
+
+### Configuration Git
+
+Par défaut, Netlify redéploie automatiquement sur :
+- ✅ Push sur la branche `main`
+- ✅ Merge de Pull Request
+
+**Workflow :**
+```bash
+# 1. Développement local
+git checkout -b feature/ma-feature
+# ... modifications ...
+git commit -m "feat: nouvelle feature"
+git push origin feature/ma-feature
+
+# 2. Pull Request sur GitHub
+# → Netlify crée un Deploy Preview
+
+# 3. Merge vers main
+# → Déploiement automatique en production
+```
+
+---
+
+## Deploy Previews
+
+### Pour chaque Pull Request
+
+Netlify crée automatiquement une URL de preview :
+
+```
+https://deploy-preview-42--kitasso.netlify.app
+```
+
+**Avantages :**
+- Tester avant merge
+- Partager avec l'équipe
+- QA visuel
+- Tests E2E sur environnement proche prod
+
+**Dans la PR GitHub :**
+- ✅ Statut du build (success/fail)
+- 🔗 Lien vers le deploy preview
+- 📊 Lighthouse scores
+
+---
+
+## Custom Domain
+
+### Ajouter un domaine personnalisé
+
+<Steps>
+  <Step title="Aller dans Domain settings">
+    **Site settings** → **Domain management** → **Add custom domain**
+  </Step>
+  
+  <Step title="Configurer le DNS">
+    Chez votre registrar (OVH, Namecheap, etc.) :
+    
+    **Option A : Apex domain (kitasso.com)**
+    ```
+    Type: A
+    Name: @
+    Value: 75.2.60.5 (IP Netlify)
+    ```
+    
+    **Option B : Subdomain (app.kitasso.com)**
+    ```
+    Type: CNAME
+    Name: app
+    Value: kitasso.netlify.app
+    ```
+  </Step>
+  
+  <Step title="Activer HTTPS">
+    Netlify active automatiquement Let's Encrypt (SSL gratuit)
+    
+    ⏱️ **Délai :** 24h max pour propagation DNS
+  </Step>
+</Steps>
+
+---
+
+## Optimisations Build
+
+### Variables Node
+
+Ajoutez dans les environment variables Netlify :
+
+```bash
+NODE_VERSION=18
+NPM_FLAGS=--legacy-peer-deps  # Si conflits de dépendances
+```
+
+### Cache des dépendances
+
+Netlify cache automatiquement `node_modules/` entre builds.
+
+**Pour forcer un rebuild complet :**
+1. **Site settings** → **Build & deploy** → **Build settings**
+2. Cliquez sur **"Clear cache and deploy site"**
+
+---
+
+## Monitoring & Analytics
+
+### Build Logs
+
+Accédez aux logs complets :
+- **Deploys** → Cliquez sur un deploy
+- Voir **Deploy log**
+
+**Erreurs fréquentes :**
+
+```bash
+# Erreur : Module not found
+→ Vérifiez les imports (case-sensitive sur Linux)
+
+# Erreur : Out of memory
+→ Ajoutez NODE_OPTIONS=--max-old-space-size=4096
+
+# Erreur : Environment variable
+→ Vérifiez VITE_SUPABASE_URL et VITE_SUPABASE_ANON_KEY
+```
+
+---
+
+### Netlify Analytics (payant)
+
+Active des analytics serveur-side :
+- Visites uniques
+- Pages populaires
+- Sources de trafic
+- Pas de cookies (RGPD-friendly)
+
+**Prix :** ~9$/mois
+
+---
+
+## Performance
+
+### Asset Optimization
+
+Netlify optimise automatiquement :
+- ✅ Gzip/Brotli compression
+- ✅ HTTP/2 Server Push
+- ✅ Global CDN
+- ✅ Smart CDN routing
+
+### Headers de cache
+
+Configurés dans `netlify.toml` :
+
+```toml
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+    X-Content-Type-Options = "nosniff"
+    X-Frame-Options = "DENY"
+    X-XSS-Protection = "1; mode=block"
+```
+
+---
+
+## Rollback
+
+### Revenir à un déploiement précédent
+
+<Steps>
+  <Step title="Aller dans Deploys">
+    Liste de tous les déploiements avec timestamps
+  </Step>
+  
+  <Step title="Sélectionner un deploy">
+    Cliquez sur un deploy précédent
+  </Step>
+  
+  <Step title="Publish deploy">
+    Cliquez sur **"Publish deploy"**
+    
+    ⏱️ **Instantané** : pas de rebuild
+  </Step>
+</Steps>
+
+<Warning>
+  Le rollback ne change PAS votre code Git. Pensez aussi à revert sur Git si nécessaire.
+</Warning>
+
+---
+
+## Functions (optionnel)
+
+Netlify Functions permet d'ajouter des endpoints serverless.
+
+### Créer une function
+
+```javascript
+// netlify/functions/hello.js
+exports.handler = async (event, context) => {
+  return {
+    statusCode: 200,
+    body: JSON.stringify({ message: 'Hello from Netlify!' }),
+  };
+};
+```
+
+**URL :** `https://kitasso.netlify.app/.netlify/functions/hello`
+
+**Use cases :**
+- Webhooks Stripe
+- Envoi d'emails transactionnels
+- Proxy API avec rate limiting
+
+---
+
+## Troubleshooting
+
+### Build échoue
+
+**Vérifications :**
+1. Build fonctionne localement ? (`npm run build`)
+2. Variables d'environnement définies ?
+3. Node version compatible ? (18+)
+4. Logs d'erreur spécifiques ?
+
+### 404 sur routes
+
+**Cause :** Redirects SPA non configurés
+
+**Solution :** Vérifiez `netlify.toml` :
+```toml
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+```
+
+### Build trop lent
+
+**Optimisations :**
+- Utilisez le cache npm
+- Réduisez les dépendances dev
+- Parallélisez avec `npm ci` au lieu de `npm install`
+
+---
+
+## Checklist déploiement
+
+Avant de passer en production :
+
+- [ ] Build local réussi (`npm run build`)
+- [ ] Tests passent (`npm test`)
+- [ ] Variables d'environnement configurées
+- [ ] `netlify.toml` présent avec redirects
+- [ ] Custom domain configuré (optionnel)
+- [ ] HTTPS activé
+- [ ] Analytics configuré (optionnel)
+- [ ] Monitoring en place
+
+---
+
+## Ressources
+
+<CardGroup cols={2}>
+  <Card title="Netlify Docs" icon="book" href="https://docs.netlify.com">
+    Documentation officielle
+  </Card>
+  
+  <Card title="Supabase Setup" icon="database" href="/deployment/supabase">
+    Configuration Supabase
+  </Card>
+  
+  <Card title="Monitoring" icon="chart-line" href="/deployment/monitoring">
+    Logs et surveillance
+  </Card>
+  
+  <Card title="Vite Config" icon="bolt" href="https://vitejs.dev/config/">
+    Configuration Vite
+  </Card>
+</CardGroup>

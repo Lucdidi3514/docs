@@ -1,0 +1,547 @@
+---
+title: 'Configuration Supabase'
+description: 'Setup complet du backend Supabase en production'
+---
+
+## Création du projet
+
+### Nouveau projet Supabase
+
+<Steps>
+  <Step title="Créer le projet">
+    1. Allez sur [supabase.com](https://supabase.com)
+    2. Cliquez sur **"New Project"**
+    3. Remplissez :
+       - **Name:** Kit'Asso Production
+       - **Database Password:** Générer un mot de passe fort
+       - **Region:** Europe (Frankfurt ou Paris)
+       - **Pricing Plan:** Free (ou Pro si besoin)
+  </Step>
+  
+  <Step title="Attendre le provisioning">
+    ⏱️ **Durée :** 2-5 minutes
+    
+    Supabase crée :
+    - Base de données PostgreSQL
+    - API REST auto-générée
+    - Realtime subscriptions
+    - Storage buckets
+    - Auth service
+  </Step>
+  
+  <Step title="Récupérer les credentials">
+    Dans **Project Settings** → **API** :
+    
+    - **Project URL:** `https://xxxxx.supabase.co`
+    - **anon public key:** `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...`
+    - **service_role key:** ⚠️ À ne JAMAIS exposer côté client
+    
+    Copiez ces valeurs pour Netlify
+  </Step>
+</Steps>
+
+---
+
+## Migrations de base de données
+
+### Option 1 : SQL Editor (recommandé pour démarrer)
+
+<Steps>
+  <Step title="Ouvrir SQL Editor">
+    Dans le dashboard Supabase → **SQL Editor**
+  </Step>
+  
+  <Step title="Exécuter les migrations">
+    Les migrations sont dans `supabase/migrations/` (43 fichiers).
+    
+    **Ordre chronologique strict :**
+    ```
+    20240101000000_initial_schema.sql
+    20240102000000_add_categories.sql
+    20240103000000_add_workflows.sql
+    ...
+    ```
+    
+    Pour chaque fichier :
+    1. Ouvrir le fichier local
+    2. Copier le contenu
+    3. Coller dans SQL Editor
+    4. Cliquer sur **"Run"**
+    5. Vérifier le succès (pas d'erreur rouge)
+  </Step>
+  
+  <Step title="Vérifier les tables">
+    Dans **Table Editor**, vous devez voir 13 tables :
+    
+    - tools
+    - categories
+    - filters
+    - tool_features
+    - workflows
+    - workflow_steps
+    - tool_packs
+    - pack_tools
+    - quizzes
+    - quiz_questions
+    - quiz_answers
+    - quiz_recommendations
+    - quiz_responses
+    - site_assets
+  </Step>
+</Steps>
+
+<Tip>
+  Pour accélérer, combinez plusieurs migrations en un seul script si elles ne créent pas de dépendances cycliques
+</Tip>
+
+---
+
+### Option 2 : Supabase CLI
+
+Si vous avez installé le CLI :
+
+```bash
+# Installer Supabase CLI
+npm install -g supabase
+
+# Login
+supabase login
+
+# Lier au projet
+supabase link --project-ref xxxxx
+
+# Push toutes les migrations
+supabase db push
+```
+
+**Avantages :**
+- Toutes les migrations en une commande
+- Historique des migrations trackées
+- Rollback possible
+
+---
+
+## Row Level Security (RLS)
+
+### Vérifier que RLS est activé
+
+```sql
+-- Pour chaque table, vérifier :
+SELECT tablename, rowsecurity 
+FROM pg_tables 
+WHERE schemaname = 'public';
+```
+
+Toutes les tables doivent avoir `rowsecurity = true`.
+
+---
+
+### Policies par table
+
+Les policies sont définies dans les migrations. Vérifiez :
+
+**Exemple : table `tools`**
+
+```sql
+-- Public : lecture seule
+CREATE POLICY "Allow public read on tools"
+  ON tools FOR SELECT
+  TO public
+  USING (true);
+
+-- Authenticated : CRUD complet
+CREATE POLICY "Allow authenticated insert on tools"
+  ON tools FOR INSERT
+  TO authenticated
+  WITH CHECK (true);
+
+CREATE POLICY "Allow authenticated update on tools"
+  ON tools FOR UPDATE
+  TO authenticated
+  USING (true) WITH CHECK (true);
+
+CREATE POLICY "Allow authenticated delete on tools"
+  ON tools FOR DELETE
+  TO authenticated
+  USING (true);
+```
+
+**Tester les policies :**
+
+```sql
+-- En tant que public (sans auth)
+SELECT * FROM tools; -- ✅ Devrait fonctionner
+
+INSERT INTO tools (name, description) 
+VALUES ('Test', 'Test'); -- ❌ Devrait échouer
+
+-- En tant qu'authenticated
+-- (créez un user via Auth pour tester)
+```
+
+---
+
+## Storage Buckets
+
+### Créer les buckets
+
+<Steps>
+  <Step title="Aller dans Storage">
+    Dashboard Supabase → **Storage**
+  </Step>
+  
+  <Step title="Créer bucket tool_logos">
+    - **Name:** `tool_logos`
+    - **Public bucket:** ✅ Yes
+    - **File size limit:** 2 MB
+    - **Allowed MIME types:** `image/*`
+  </Step>
+  
+  <Step title="Créer bucket site_assets">
+    - **Name:** `site_assets`
+    - **Public bucket:** ✅ Yes
+    - **File size limit:** 5 MB
+    - **Allowed MIME types:** `image/*, video/*`
+  </Step>
+</Steps>
+
+---
+
+### Policies Storage
+
+```sql
+-- Bucket tool_logos : Public read, Authenticated write
+CREATE POLICY "Public read tool_logos"
+  ON storage.objects FOR SELECT
+  USING (bucket_id = 'tool_logos');
+
+CREATE POLICY "Authenticated upload tool_logos"
+  ON storage.objects FOR INSERT
+  TO authenticated
+  WITH CHECK (bucket_id = 'tool_logos');
+
+CREATE POLICY "Authenticated delete tool_logos"
+  ON storage.objects FOR DELETE
+  TO authenticated
+  USING (bucket_id = 'tool_logos');
+```
+
+**Tester l'upload :**
+
+```typescript
+// Dans votre app (authenticated)
+import { toolsApi } from '@/api';
+
+const file = // ... récupéré depuis input file
+const publicUrl = await toolsApi.uploadLogo(file);
+console.log(publicUrl); // https://xxxxx.supabase.co/storage/v1/object/public/tool_logos/...
+```
+
+---
+
+## Authentication
+
+### Configurer Auth
+
+<Steps>
+  <Step title="Aller dans Authentication">
+    Dashboard → **Authentication** → **Settings**
+  </Step>
+  
+  <Step title="Désactiver les inscriptions publiques">
+    **Enable email signups:** ❌ Off
+    
+    Seuls les admins créeront des comptes depuis le dashboard
+  </Step>
+  
+  <Step title="Configurer Email Templates (optionnel)">
+    **Email Templates** → Personnalisez :
+    - Confirmation Email
+    - Magic Link
+    - Reset Password
+  </Step>
+</Steps>
+
+---
+
+### Créer un utilisateur admin
+
+<Steps>
+  <Step title="Aller dans Users">
+    **Authentication** → **Users** → **Add user**
+  </Step>
+  
+  <Step title="Créer le user">
+    - **Email:** `admin@kitasso.com`
+    - **Password:** Générer un mot de passe fort
+    - **Auto Confirm User:** ✅ Yes
+  </Step>
+  
+  <Step title="Tester la connexion">
+    Sur votre app déployée :
+    1. Allez sur `/admin`
+    2. Redirigé vers `/login`
+    3. Connectez-vous avec les credentials
+    4. Devrait accéder au dashboard admin
+  </Step>
+</Steps>
+
+---
+
+## Performance & Indexes
+
+### Vérifier les indexes
+
+```sql
+-- Lister tous les indexes
+SELECT 
+  tablename, 
+  indexname, 
+  indexdef 
+FROM pg_indexes 
+WHERE schemaname = 'public';
+```
+
+Les migrations devraient avoir créé des indexes sur :
+- `tools.category_id`
+- `tools.pricing_tier`
+- `tool_features.tool_id`
+- `tool_features.filter_id`
+- `workflow_steps.workflow_id`
+- `pack_tools.pack_id`
+- etc.
+
+---
+
+### Connection Pooling
+
+Supabase gère automatiquement le pooling avec PgBouncer.
+
+**Limites par plan :**
+- **Free:** 60 connections
+- **Pro:** 200 connections
+- **Enterprise:** Custom
+
+Si vous dépassez, utilisez Supabase Connection Pooler :
+
+```typescript
+// Au lieu de :
+const supabase = createClient(url, anonKey);
+
+// Utilisez :
+const supabase = createClient(poolerUrl, anonKey);
+```
+
+---
+
+## Monitoring
+
+### Database Health
+
+**Dashboard** → **Database** → **Health**
+
+Surveillez :
+- **CPU Usage:** < 80%
+- **Memory Usage:** < 80%
+- **Disk Usage:** < 80%
+- **Connections:** < max limit
+
+---
+
+### Logs
+
+**Dashboard** → **Logs**
+
+Filtres :
+- **API:** Requêtes REST
+- **Database:** Queries SQL
+- **Auth:** Login attempts
+- **Storage:** Uploads/downloads
+
+**Recherche par erreur :**
+```
+status:400
+status:500
+error
+```
+
+---
+
+### API Analytics
+
+**Dashboard** → **API**
+
+Graphiques :
+- Requests per second
+- Response times (p50, p95, p99)
+- Error rates
+- Cache hit ratio
+
+---
+
+## Backups
+
+### Automatic Backups
+
+Supabase crée automatiquement des backups :
+
+**Free plan :**
+- 1 backup par jour
+- Rétention : 7 jours
+
+**Pro plan :**
+- Backups PITR (Point In Time Recovery)
+- Rétention : 7-30 jours
+- Restore à n'importe quel point
+
+---
+
+### Manual Backup
+
+```bash
+# Via CLI
+supabase db dump -f backup.sql
+
+# Ou via pgAdmin connecté à Supabase
+```
+
+---
+
+## Sécurité
+
+### API Keys
+
+<Warning>
+  Ne commitez JAMAIS les clés dans Git !
+</Warning>
+
+**Bonnes pratiques :**
+- ✅ `anon key` : Safe pour frontend (protégé par RLS)
+- ❌ `service_role key` : Backend seulement, jamais exposé
+- 🔄 Régénérez les clés si compromises
+
+---
+
+### RLS Testing
+
+Testez toujours avec un utilisateur non-authentifié :
+
+```typescript
+// Créer un client non-auth
+const publicClient = createClient(supabaseUrl, anonKey);
+
+// Tester lecture (devrait fonctionner)
+const { data: tools } = await publicClient.from('tools').select('*');
+console.log(tools); // ✅ Liste des outils
+
+// Tester écriture (devrait échouer)
+const { error } = await publicClient
+  .from('tools')
+  .insert({ name: 'Hack' });
+console.log(error); // ❌ "new row violates row-level security policy"
+```
+
+---
+
+### SQL Injection Protection
+
+Supabase protège automatiquement contre SQL injection via :
+- Prepared statements
+- Parameterized queries
+- RLS enforcement
+
+**Évitez quand même :**
+```typescript
+// ❌ Mauvais : concaténation de strings
+const { data } = await supabase
+  .rpc('unsafe_query', { 
+    query: `SELECT * FROM tools WHERE name = '${userInput}'` 
+  });
+
+// ✅ Bon : utiliser les méthodes Supabase
+const { data } = await supabase
+  .from('tools')
+  .select('*')
+  .eq('name', userInput);
+```
+
+---
+
+## Troubleshooting
+
+### Erreur : "relation does not exist"
+
+**Cause :** Table non créée ou migration échouée
+
+**Solution :**
+1. Vérifiez dans **Table Editor** que la table existe
+2. Réexécutez la migration dans SQL Editor
+3. Vérifiez les logs de migration
+
+---
+
+### Erreur : "new row violates row-level security policy"
+
+**Cause :** RLS bloque l'opération
+
+**Solution :**
+1. Vérifiez que vous êtes authentifié
+2. Vérifiez les policies de la table
+3. Testez avec `service_role key` pour bypasser RLS (debug uniquement)
+
+---
+
+### Slow queries
+
+**Analyse :**
+```sql
+-- Queries lentes
+SELECT * FROM pg_stat_statements 
+ORDER BY total_exec_time DESC 
+LIMIT 10;
+```
+
+**Solutions :**
+- Ajoutez des indexes
+- Optimisez les queries
+- Utilisez le cache
+- Passez au plan Pro (plus de CPU)
+
+---
+
+## Checklist production
+
+Avant de lancer en production :
+
+- [ ] Toutes les migrations exécutées
+- [ ] 13 tables créées
+- [ ] RLS activé sur toutes les tables
+- [ ] Policies testées
+- [ ] 2 buckets Storage créés
+- [ ] User admin créé et testé
+- [ ] Backups automatiques activés
+- [ ] Monitoring configuré
+- [ ] Variables env dans Netlify
+- [ ] Test complet de l'app
+
+---
+
+## Ressources
+
+<CardGroup cols={2}>
+  <Card title="Supabase Docs" icon="book" href="https://supabase.com/docs">
+    Documentation officielle
+  </Card>
+  
+  <Card title="Database Schema" icon="database" href="/database/schema">
+    Structure des tables
+  </Card>
+  
+  <Card title="RLS Guide" icon="shield" href="/database/rls">
+    Row Level Security
+  </Card>
+  
+  <Card title="Netlify Setup" icon="globe" href="/deployment/netlify">
+    Configuration Netlify
+  </Card>
+</CardGroup>
