@@ -18,16 +18,16 @@
   "topbarLinks": [
     {
       "name": "GitHub",
-      "url": "https://github.com/votre-org/kitasso"
+      "url": "https://github.com/Lucdidi3514/assopedia-v2"
     },
     {
       "name": "Demo",
-      "url": "https://kitasso.netlify.app"
+      "url": "https://assopedia.lucdidion.lu/"
     }
   ],
   "topbarCtaButton": {
     "name": "Dashboard Admin",
-    "url": "https://kitasso.netlify.app/admin"
+    "url": "https://assopedia.lucdidion.lu/login"
   },
   "tabs": [
     {
