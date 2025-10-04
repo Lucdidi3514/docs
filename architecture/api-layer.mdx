@@ -1,0 +1,668 @@
+---
+title: 'API Layer'
+description: 'Abstraction centralisée pour toutes les interactions Supabase'
+---
+
+## Principe fondamental
+
+**Règle d'or :** Aucun composant ne doit appeler Supabase directement. Toutes les interactions passent par le dossier `/api`.
+
+### ❌ Ne jamais faire
+
+```typescript
+// Dans un composant React
+import { supabase } from '@/lib/supabase';
+
+function ToolsList() {
+  const [tools, setTools] = useState([]);
+  
+  useEffect(() => {
+    // ❌ Appel direct Supabase
+    supabase.from('tools').select('*').then(({ data }) => {
+      setTools(data);
+    });
+  }, []);
+}
+```
+
+### ✅ Toujours faire
+
+```typescript
+// Dans un composant React
+import { toolsApi } from '@/api';
+
+function ToolsList() {
+  const [tools, setTools] = useState([]);
+  
+  useEffect(() => {
+    // ✅ Via l'API layer
+    toolsApi.list().then(setTools);
+  }, []);
+}
+```
+
+---
+
+## Structure de l'API layer
+
+```
+src/api/
+├── base.ts                 # Utilitaires communs
+├── client.ts               # Client Supabase singleton
+├── types.ts                # Types partagés
+├── index.ts                # Barrel exports
+│
+├── auth.ts                 # Authentification
+├── tools.ts                # CRUD Tools
+├── categories.ts           # CRUD Categories
+├── filters.ts              # CRUD Filters/Features
+├── workflows.ts            # CRUD Workflows
+├── packs.ts                # CRUD Tool Packs
+├── quiz.ts                 # CRUD Quiz
+│
+└── __tests__/              # Tests API
+    ├── tools.spec.ts
+    ├── workflows.spec.ts
+    └── ...
+```
+
+---
+
+## Fichiers de base
+
+### `client.ts` - Client Supabase singleton
+
+```typescript
+import { createClient } from '@supabase/supabase-js';
+import type { Database } from '@/types/database';
+
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+if (!supabaseUrl || !supabaseAnonKey) {
+  throw new Error('Missing Supabase environment variables');
+}
+
+export const supabase = createClient<Database>(
+  supabaseUrl,
+  supabaseAnonKey,
+  {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+    },
+  }
+);
+```
+
+**Pourquoi un singleton ?**
+- Une seule instance partagée
+- Gestion de session centralisée
+- Connection pooling automatique
+
+---
+
+### `base.ts` - Gestion d'erreurs
+
+```typescript
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    public code?: string,
+    public details?: unknown
+  ) {
+    super(message);
+    this.name = 'ApiError';
+  }
+}
+
+export function handleSupabaseError(error: unknown): never {
+  if (error instanceof Error) {
+    throw new ApiError(error.message, 'SUPABASE_ERROR', error);
+  }
+  throw new ApiError('Unknown error occurred', 'UNKNOWN_ERROR');
+}
+
+export async function withErrorHandling<T>(
+  fn: () => Promise<T>
+): Promise<T> {
+  try {
+    return await fn();
+  } catch (error) {
+    handleSupabaseError(error);
+  }
+}
+```
+
+**Bénéfices :**
+- Erreurs typées et prévisibles
+- Logging centralisé
+- Stack traces préservées
+- Retry logic future
+
+---
+
+## API Tools - Exemple complet
+
+### `tools.ts`
+
+```typescript
+import { supabase } from './client';
+import { handleSupabaseError } from './base';
+import type { Tool, ToolInsert, ToolUpdate, EnhancedTool } from './types';
+
+export const toolsApi = {
+  /**
+   * Liste tous les outils avec catégorie et features
+   */
+  async list(): Promise<EnhancedTool[]> {
+    const { data, error } = await supabase
+      .from('tools')
+      .select(`
+        *,
+        category:categories(name),
+        tool_features(
+          filter:filters(value)
+        )
+      `)
+      .order('name');
+
+    if (error) handleSupabaseError(error);
+
+    // Transform data
+    return data.map((tool) => ({
+      ...tool,
+      category_name: tool.category?.name || 'Non catégorisé',
+      features: tool.tool_features?.map((tf) => tf.filter.value) || [],
+    }));
+  },
+
+  /**
+   * Récupère un outil par ID
+   */
+  async getById(id: string): Promise<EnhancedTool> {
+    const { data, error } = await supabase
+      .from('tools')
+      .select(`
+        *,
+        category:categories(name),
+        tool_features(
+          filter:filters(value)
+        )
+      `)
+      .eq('id', id)
+      .single();
+
+    if (error) handleSupabaseError(error);
+
+    return {
+      ...data,
+      category_name: data.category?.name || 'Non catégorisé',
+      features: data.tool_features?.map((tf) => tf.filter.value) || [],
+    };
+  },
+
+  /**
+   * Crée un nouvel outil
+   */
+  async create(tool: ToolInsert): Promise<Tool> {
+    const { data, error } = await supabase
+      .from('tools')
+      .insert(tool)
+      .select()
+      .single();
+
+    if (error) handleSupabaseError(error);
+    return data;
+  },
+
+  /**
+   * Met à jour un outil
+   */
+  async update(id: string, updates: ToolUpdate): Promise<Tool> {
+    const { data, error } = await supabase
+      .from('tools')
+      .update(updates)
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) handleSupabaseError(error);
+    return data;
+  },
+
+  /**
+   * Supprime un outil
+   */
+  async delete(id: string): Promise<void> {
+    const { error } = await supabase
+      .from('tools')
+      .delete()
+      .eq('id', id);
+
+    if (error) handleSupabaseError(error);
+  },
+
+  /**
+   * Upload un logo vers Supabase Storage
+   */
+  async uploadLogo(file: File): Promise<string> {
+    // Validation
+    if (!file.type.startsWith('image/')) {
+      throw new ApiError('Le fichier doit être une image');
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      throw new ApiError('Le fichier ne doit pas dépasser 2MB');
+    }
+
+    // Generate unique filename
+    const fileExt = file.name.split('.').pop();
+    const fileName = `${crypto.randomUUID()}.${fileExt}`;
+
+    // Upload to storage
+    const { data, error } = await supabase.storage
+      .from('tool_logos')
+      .upload(fileName, file);
+
+    if (error) handleSupabaseError(error);
+
+    // Get public URL
+    const { data: { publicUrl } } = supabase.storage
+      .from('tool_logos')
+      .getPublicUrl(fileName);
+
+    return publicUrl;
+  },
+};
+```
+
+---
+
+## Types partagés
+
+### `types.ts`
+
+```typescript
+import type { Database } from '@/types/database';
+
+// Types de base depuis Supabase
+export type Tool = Database['public']['Tables']['tools']['Row'];
+export type ToolInsert = Database['public']['Tables']['tools']['Insert'];
+export type ToolUpdate = Database['public']['Tables']['tools']['Update'];
+
+// Types enrichis avec jointures
+export interface EnhancedTool extends Tool {
+  category_name: string;
+  features: string[];
+}
+
+// Filtres de recherche
+export interface ToolFilters {
+  search?: string;
+  pricing?: string[];
+  categoryId?: string;
+}
+
+// Pagination (future)
+export interface PaginatedResponse<T> {
+  data: T[];
+  count: number;
+  page: number;
+  pageSize: number;
+}
+```
+
+---
+
+## Patterns d'utilisation
+
+### Pattern 1 : Listing simple
+
+```typescript
+// Dans un composant ou hook
+import { toolsApi } from '@/api';
+
+async function loadTools() {
+  try {
+    const tools = await toolsApi.list();
+    console.log(`Chargé ${tools.length} outils`);
+    return tools;
+  } catch (error) {
+    if (error instanceof ApiError) {
+      console.error('Erreur API:', error.message);
+    }
+    return [];
+  }
+}
+```
+
+---
+
+### Pattern 2 : Création avec validation
+
+```typescript
+import { toolsApi } from '@/api';
+import { z } from 'zod';
+
+const toolSchema = z.object({
+  name: z.string().min(1, 'Nom requis'),
+  description: z.string().min(10, 'Description trop courte'),
+  pricing_tier: z.enum(['Gratuit', 'Freemium', 'Payant', 'Entreprise']),
+  category_id: z.string().uuid(),
+});
+
+async function createTool(formData: unknown) {
+  // Validation Zod
+  const validatedData = toolSchema.parse(formData);
+  
+  // Appel API
+  const tool = await toolsApi.create(validatedData);
+  
+  return tool;
+}
+```
+
+---
+
+### Pattern 3 : Upload avec preview
+
+```typescript
+import { toolsApi } from '@/api';
+
+async function uploadToolLogo(file: File) {
+  // Validation côté client
+  if (!file.type.startsWith('image/')) {
+    throw new Error('Format invalide');
+  }
+
+  // Preview local
+  const previewUrl = URL.createObjectURL(file);
+  
+  // Upload vers Supabase
+  const publicUrl = await toolsApi.uploadLogo(file);
+  
+  // Cleanup preview
+  URL.revokeObjectURL(previewUrl);
+  
+  return publicUrl;
+}
+```
+
+---
+
+### Pattern 4 : Mise à jour partielle
+
+```typescript
+import { toolsApi } from '@/api';
+
+async function updateToolPricing(toolId: string, newTier: string) {
+  // Seul le champ pricing_tier est mis à jour
+  await toolsApi.update(toolId, {
+    pricing_tier: newTier,
+  });
+}
+```
+
+---
+
+## Gestion des relations
+
+### Jointures Supabase
+
+```typescript
+// Récupérer un outil avec sa catégorie
+const { data } = await supabase
+  .from('tools')
+  .select(`
+    *,
+    category:categories(id, name)
+  `)
+  .eq('id', toolId)
+  .single();
+
+// Résultat :
+// {
+//   id: '...',
+//   name: 'Mailchimp',
+//   category: {
+//     id: '...',
+//     name: 'Communication'
+//   }
+// }
+```
+
+### Many-to-Many via table de jonction
+
+```typescript
+// Récupérer les features d'un outil
+const { data } = await supabase
+  .from('tools')
+  .select(`
+    *,
+    tool_features(
+      filter:filters(id, value, filter_type)
+    )
+  `)
+  .eq('id', toolId)
+  .single();
+
+// Résultat :
+// {
+//   id: '...',
+//   name: 'Mailchimp',
+//   tool_features: [
+//     { filter: { id: '...', value: 'Email Marketing', filter_type: 'capability' } },
+//     { filter: { id: '...', value: 'Automation', filter_type: 'capability' } }
+//   ]
+// }
+```
+
+---
+
+## Authentification
+
+### `auth.ts`
+
+```typescript
+import { supabase } from './client';
+import { handleSupabaseError } from './base';
+
+export const authApi = {
+  /**
+   * Connexion email/password
+   */
+  async signIn(email: string, password: string) {
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+
+    if (error) handleSupabaseError(error);
+    return data;
+  },
+
+  /**
+   * Déconnexion
+   */
+  async signOut() {
+    const { error } = await supabase.auth.signOut();
+    if (error) handleSupabaseError(error);
+  },
+
+  /**
+   * Récupérer la session courante
+   */
+  async getSession() {
+    const { data, error } = await supabase.auth.getSession();
+    if (error) handleSupabaseError(error);
+    return data.session;
+  },
+
+  /**
+   * Écouter les changements de session
+   */
+  onAuthStateChange(callback: (session: Session | null) => void) {
+    return supabase.auth.onAuthStateChange((event, session) => {
+      callback(session);
+    });
+  },
+};
+```
+
+---
+
+## Cache & Performance
+
+### Cache en mémoire simple
+
+```typescript
+// Ajout dans base.ts
+const cache = new Map<string, { data: unknown; timestamp: number }>();
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+export async function fetchWithCache<T>(
+  key: string,
+  fetcher: () => Promise<T>
+): Promise<T> {
+  const cached = cache.get(key);
+  
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+    return cached.data as T;
+  }
+  
+  const data = await fetcher();
+  cache.set(key, { data, timestamp: Date.now() });
+  
+  return data;
+}
+
+// Utilisation
+export const toolsApi = {
+  async list(): Promise<EnhancedTool[]> {
+    return fetchWithCache('tools:list', async () => {
+      // Requête Supabase normale
+      const { data, error } = await supabase
+        .from('tools')
+        .select('*');
+      
+      if (error) handleSupabaseError(error);
+      return data;
+    });
+  },
+};
+```
+
+---
+
+## Testing
+
+### Mock de l'API layer
+
+```typescript
+// __tests__/tools.spec.ts
+import { describe, it, expect, vi } from 'vitest';
+import { toolsApi } from '../tools';
+import { supabase } from '../client';
+
+// Mock Supabase
+vi.mock('../client', () => ({
+  supabase: {
+    from: vi.fn(),
+  },
+}));
+
+describe('toolsApi', () => {
+  it('should list all tools', async () => {
+    // Setup mock
+    const mockData = [
+      { id: '1', name: 'Tool 1' },
+      { id: '2', name: 'Tool 2' },
+    ];
+    
+    vi.mocked(supabase.from).mockReturnValue({
+      select: vi.fn().mockResolvedValue({ data: mockData, error: null }),
+    } as any);
+    
+    // Test
+    const tools = await toolsApi.list();
+    
+    expect(tools).toHaveLength(2);
+    expect(tools[0].name).toBe('Tool 1');
+  });
+
+  it('should handle errors', async () => {
+    // Setup error mock
+    vi.mocked(supabase.from).mockReturnValue({
+      select: vi.fn().mockResolvedValue({
+        data: null,
+        error: { message: 'Connection failed' },
+      }),
+    } as any);
+    
+    // Test
+    await expect(toolsApi.list()).rejects.toThrow('Connection failed');
+  });
+});
+```
+
+---
+
+## Bonnes pratiques
+
+### ✅ À faire
+
+1. **Toujours typer les retours**
+```typescript
+async list(): Promise<EnhancedTool[]> { }
+```
+
+2. **Gérer les erreurs**
+```typescript
+if (error) handleSupabaseError(error);
+```
+
+3. **Documenter avec JSDoc**
+```typescript
+/**
+ * Récupère tous les outils avec leurs relations
+ * @returns Liste des outils enrichis
+ * @throws ApiError si la requête échoue
+ */
+async list(): Promise<EnhancedTool[]> { }
+```
+
+4. **Valider les entrées**
+```typescript
+if (!file.type.startsWith('image/')) {
+  throw new ApiError('Format invalide');
+}
+```
+
+### ❌ À éviter
+
+1. **Appels Supabase directs dans les composants**
+2. **Ignorer les erreurs**
+3. **Types `any`**
+4. **Logique métier dans l'API layer** (mettre dans hooks)
+
+---
+
+## Ressources
+
+<CardGroup cols={2}>
+  <Card title="Feature-Based" icon="layer-group" href="/architecture/feature-based">
+    Organisation du code
+  </Card>
+  
+  <Card title="Database Schema" icon="database" href="/database/schema">
+    Structure des 13 tables
+  </Card>
+  
+  <Card title="Hooks" icon="hook" href="/development/hooks">
+    Utiliser l'API dans des hooks
+  </Card>
+  
+  <Card title="Testing" icon="flask" href="/development/testing">
+    Tester l'API layer
+  </Card>
+</CardGroup>
