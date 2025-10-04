@@ -1,11 +1,7 @@
 ---
-title: 'Architecture globale'
-description: 'Vue d'ensemble de l'organisation du projet KitAsso'
+title: "Principes de conception"
+description: "KitAsso repose sur 3 piliers architecturaux :"
 ---
-
-## Principes de conception
-
-KitAsso repose sur 3 piliers architecturaux :
 
 ### 1. Feature-Based Structure
 
@@ -23,6 +19,7 @@ src/features/
 ```
 
 **Avantages :**
+
 - Isolation des fonctionnalités
 - Facilite le travail en équipe
 - Suppression/ajout de features sans impact
@@ -36,6 +33,7 @@ src/features/
 ### 2. API Layer découplée
 
 Séparation stricte entre :
+
 - **Route Handlers** (`app/api/`) : points d'entrée HTTP
 - **Business Logic** (`src/features/*/api/`) : règles métier
 - **Data Access** (Supabase client) : accès base de données
@@ -62,11 +60,9 @@ export async function GET() {
   <Card title="Modals" icon="window-maximize">
     Pattern d'ouverture via URL
   </Card>
-  
   <Card title="Forms" icon="file-lines">
     React Hook Form + Zod
   </Card>
-  
   <Card title="Routes" icon="route">
     App Router + Parallel Routes
   </Card>
@@ -126,28 +122,29 @@ kitasso/
 <AccordionGroup>
   <Accordion title="app/ - Next.js App Router">
     Contient toutes les routes de l'application :
+
     - `(auth)/` : pages nécessitant une authentification
     - `(public)/` : pages accessibles sans compte
     - `api/` : endpoints API REST
   </Accordion>
-  
   <Accordion title="src/features/ - Domaines métier">
     Chaque feature contient :
+
     - `api/` : logique métier et accès données
     - `components/` : composants UI spécifiques
     - `hooks/` : hooks React custom
     - `types/` : types TypeScript
   </Accordion>
-  
   <Accordion title="src/shared/ - Code partagé">
     Éléments réutilisables entre features :
+
     - Composants UI génériques
     - Hooks utilitaires
     - Fonctions helpers
   </Accordion>
-  
   <Accordion title="src/lib/ - Clients externes">
     Configuration des services tiers :
+
     - Client Supabase
     - Authentification
     - Storage
@@ -161,19 +158,17 @@ kitasso/
 <Steps>
   <Step title="Comprendre l'approche feature-based">
     [Architecture feature-based](/architecture/feature-based)
-    
+
     Découvrez pourquoi nous organisons le code par domaine métier
   </Step>
-  
   <Step title="Explorer les patterns">
     [Patterns de code](/architecture/patterns)
-    
+
     Modals, forms, routes : les standards à suivre
   </Step>
-  
   <Step title="Découvrir l'API">
     [API Overview](/api/overview)
-    
+
     Documentation des endpoints disponibles
   </Step>
 </Steps>
@@ -186,15 +181,12 @@ kitasso/
   <Card title="Modularité" icon="puzzle-piece">
     Chaque feature peut être activée/désactivée indépendamment
   </Card>
-  
   <Card title="Testabilité" icon="flask">
     La logique métier est découplée du framework
   </Card>
-  
   <Card title="Type Safety" icon="shield">
     TypeScript strict + validation Zod partout
   </Card>
-  
   <Card title="Performance" icon="rocket">
     Server Components par défaut, hydratation minimale
   </Card>
