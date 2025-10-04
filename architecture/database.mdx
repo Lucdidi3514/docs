@@ -1,6 +1,6 @@
 ---
-title: 'Architecture Base de données'
-description: 'Vue d'ensemble des 13 tables Supabase et leurs relations'
+title: "Architecture Base de données"
+description: "Vue d'ensemble des 13 tables Supabase et leurs relations"
 ---
 
 ## Vue d'ensemble
@@ -11,21 +11,19 @@ Kit'Asso utilise **PostgreSQL via Supabase** avec 13 tables organisées en 4 gro
   <Card title="Core" icon="database">
     Tools, Categories, Filters
   </Card>
-  
   <Card title="Workflows" icon="route">
     Workflows, Workflow Steps
   </Card>
-  
   <Card title="Packs" icon="box">
     Tool Packs, Pack Tools
   </Card>
-  
   <Card title="Quiz" icon="clipboard-question">
     Quizzes, Questions, Answers, Recommendations, Responses
   </Card>
 </CardGroup>
 
 **Statistiques :**
+
 - 13 tables avec relations complètes
 - Row Level Security (RLS) sur toutes les tables
 - 43 fichiers de migration trackés
@@ -76,11 +74,13 @@ CREATE TABLE tools (
 ```
 
 **Colonnes clés :**
+
 - `pricing_tier` : Enum strict pour cohérence
 - `category_id` : Foreign key vers categories
 - `logo_url` : URL publique depuis Supabase Storage
 
 **Indexes :**
+
 ```sql
 CREATE INDEX idx_tools_category ON tools(category_id);
 CREATE INDEX idx_tools_pricing ON tools(pricing_tier);
@@ -101,6 +101,7 @@ CREATE TABLE categories (
 ```
 
 **Exemples de données :**
+
 - Communication
 - Gestion de projet
 - Site Web
@@ -124,6 +125,7 @@ CREATE TABLE filters (
 ```
 
 **Types de filters :**
+
 - `filter_type` = 'capability' → Fonctionnalités (Email Marketing, CRM)
 - `filter_type` = 'integration' → Intégrations (Zapier, Stripe)
 - `filter_type` = 'platform' → Plateformes (Web, Mobile, Desktop)
@@ -145,6 +147,7 @@ CREATE TABLE tool_features (
 ```
 
 **Requête typique :**
+
 ```sql
 -- Récupérer un outil avec ses features
 SELECT 
@@ -187,11 +190,13 @@ CREATE TABLE workflows (
 ```
 
 **Colonnes importantes :**
+
 - `steps` : JSONB avec structure `[{ title, description, tool }]`
 - `status` : Seuls les workflows 'active' sont visibles publiquement
 - `display_order` : Ordre d'affichage dans l'interface
 
-**Exemple de `steps` JSONB :**
+**`Exemple de steps JSONB :`**
+
 ```json
 [
   {
@@ -243,13 +248,15 @@ CREATE TABLE workflow_steps (
 ```
 
 **Structure enrichie pour pédagogie :**
+
 - `detailed_instructions` : Liste JSONB d'instructions
 - `completion_checklist` : Array de tâches à cocher
 - `story` : Contexte narratif (persona, situation, goal)
 - `visuals` : Screenshots, diagrammes
 - `videos` : Tutoriels vidéo
 
-**Exemple de `story` JSONB :**
+**`Exemple de story JSONB :`**
+
 ```json
 {
   "persona": "Marie, présidente d'association",
@@ -282,6 +289,7 @@ CREATE TABLE tool_packs (
 ```
 
 **Colonnes UI :**
+
 - `icon` : Nom d'icône Lucide (ex: 'Rocket', 'Mail')
 - `color` : Couleur thème (blue, green, orange, purple)
 - `display_order` : Position dans la liste
@@ -304,6 +312,7 @@ CREATE TABLE pack_tools (
 ```
 
 **Requête typique :**
+
 ```sql
 -- Récupérer un pack avec ses outils
 SELECT 
@@ -344,6 +353,7 @@ CREATE TABLE quizzes (
 ```
 
 **Slug pour routing :**
+
 ```
 /quiz/diagnostic-numerique
 /quiz/choix-outils
@@ -370,6 +380,7 @@ CREATE TABLE quiz_questions (
 ```
 
 **Types de questions :**
+
 - `single` : Choix unique (radio)
 - `multiple` : Choix multiples (checkbox)
 - `scale` : Échelle 1-5 (slider)
@@ -392,6 +403,7 @@ CREATE TABLE quiz_answers (
 ```
 
 **Exemple :**
+
 ```
 Question: "Quel est votre niveau en email marketing ?"
 Answers:
@@ -419,7 +431,8 @@ CREATE TABLE quiz_recommendations (
 );
 ```
 
-**Exemple de `condition_logic` :**
+**`Exemple de condition_logic :`**
+
 ```json
 {
   "rules": [
@@ -438,8 +451,7 @@ CREATE TABLE quiz_recommendations (
 }
 ```
 
-**Logique :**
-Si niveau = débutant ET besoin = email  
+**Logique :** Si niveau = débutant ET besoin = email\
 → Recommander Starter Pack + Mailchimp
 
 ---
@@ -460,7 +472,8 @@ CREATE TABLE quiz_responses (
 );
 ```
 
-**Exemple de `answers` JSONB :**
+**`Exemple de answers JSONB :`**
+
 ```json
 {
   "question-1": "beginner",
@@ -487,6 +500,7 @@ CREATE TABLE site_assets (
 ```
 
 **Usage :**
+
 - Logos de partenaires
 - Images de hero
 - Illustrations
@@ -583,6 +597,7 @@ YYYYMMDDHHMMSS_description.sql
 ```
 
 **Exemples :**
+
 ```
 20240101000000_initial_schema.sql
 20240102000000_add_workflows.sql
@@ -603,15 +618,12 @@ YYYYMMDDHHMMSS_description.sql
   <Card title="Schema complet" icon="database" href="/database/schema">
     Documentation détaillée des 13 tables
   </Card>
-  
   <Card title="Row Level Security" icon="shield" href="/database/rls">
     Politiques de sécurité
   </Card>
-  
   <Card title="Storage" icon="folder" href="/database/storage">
     Buckets et uploads
   </Card>
-  
   <Card title="API Layer" icon="plug" href="/architecture/api-layer">
     Accès aux données
   </Card>
