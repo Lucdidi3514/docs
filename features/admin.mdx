@@ -1,0 +1,1015 @@
+---
+title: 'Admin Dashboard'
+description: 'Comprehensive management interface for tools, workflows, packs, and quizzes'
+---
+
+## Vue d'ensemble
+
+Le dashboard admin offre une interface complète de gestion de contenu pour Kit'Asso. Accessible uniquement aux utilisateurs authentifiés, il permet de gérer l'intégralité du catalogue : outils, workflows, packs et quiz.
+
+**Fonctionnalités principales :**
+- 4 panels de gestion (Tools, Workflows, Packs, Quiz)
+- CRUD complet sur toutes les entités
+- Upload d'images vers Supabase Storage
+- Interface responsive avec recherche et filtres
+- Modals lazy-loaded pour meilleures performances
+- Notifications de succès/erreur en temps réel
+- Preview avant publication
+
+---
+
+## Architecture technique
+
+### Structure des fichiers
+
+```
+src/pages/Admin.tsx                    # Page principale
+src/features/
+  ├── tools/modals/ToolModal/          # Modal de gestion d'outils
+  │   ├── index.tsx                    # Container
+  │   ├── ToolForm.tsx                 # Formulaire
+  │   ├── ToolPreview.tsx              # Preview
+  │   └── useToolModal.ts              # Logique métier
+  ├── workflows/modals/WorkflowModal/  # Modal de workflows
+  ├── tool-packs/modals/PackModal/     # Modal de packs
+  └── quiz/admin/                      # Panel admin quiz
+      ├── QuizManager.tsx
+      ├── QuizBuilder.tsx
+      └── QuizAnalytics.tsx
+```
+
+### Sécurité et RLS
+
+**Route protégée :**
+```typescript
+// src/router.tsx
+{
+  path: '/admin',
+  element: (
+    <ProtectedRoute>
+      <Admin />
+    </ProtectedRoute>
+  )
+}
+```
+
+**ProtectedRoute Component :**
+```typescript
+function ProtectedRoute({ children }: { children: React.ReactNode }) {
+  const { user, loading } = useAuth();
+
+  if (loading) {
+    return <div>Chargement...</div>;
+  }
+
+  if (!user) {
+    return <Navigate to="/login" replace />;
+  }
+
+  return <>{children}</>;
+}
+```
+
+**RLS Policies :**
+- Seuls les utilisateurs `authenticated` peuvent effectuer des INSERT/UPDATE/DELETE
+- Accès complet à tous les contenus (y compris drafts)
+- Lecture des contenus inactifs autorisée
+
+---
+
+## Panel 1 : Tools Management
+
+### Interface principale
+
+**Fichier :** `src/pages/Admin.tsx` (section Tools)
+
+```typescript
+function ToolsPanel() {
+  const [tools, setTools] = useState<EnhancedTool[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState<string>('all');
+
+  // Charger les outils
+  useEffect(() => {
+    loadTools();
+  }, []);
+
+  const loadTools = async () => {
+    try {
+      const data = await toolsApi.list();
+      setTools(data);
+    } catch (error) {
+      toast.error('Erreur lors du chargement des outils');
+    }
+  };
+
+  // Filtrer les outils
+  const filteredTools = tools.filter(tool => {
+    const matchesSearch = tool.name.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesCategory = selectedCategory === 'all' || tool.category_id === selectedCategory;
+    return matchesSearch && matchesCategory;
+  });
+
+  return (
+    <div className="space-y-6">
+      {/* Header avec actions */}
+      <div className="flex justify-between items-center">
+        <h2 className="text-2xl font-bold">Gestion des outils</h2>
+        <button
+          onClick={() => openToolModal('create')}
+          className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
+        >
+          + Ajouter un outil
+        </button>
+      </div>
+
+      {/* Filtres */}
+      <div className="flex gap-4">
+        <input
+          type="text"
+          placeholder="Rechercher un outil..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="flex-1 px-4 py-2 border rounded-lg"
+        />
+        <CategoryFilter
+          value={selectedCategory}
+          onChange={setSelectedCategory}
+        />
+      </div>
+
+      {/* Grille d'outils */}
+      <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {filteredTools.map(tool => (
+          <ToolAdminCard
+            key={tool.id}
+            tool={tool}
+            onEdit={() => openToolModal('edit', tool)}
+            onDelete={() => handleDeleteTool(tool.id)}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+```
+
+### ToolAdminCard
+
+```typescript
+function ToolAdminCard({ 
+  tool, 
+  onEdit, 
+  onDelete 
+}: { 
+  tool: EnhancedTool;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <div className="bg-white rounded-lg shadow-md p-4 hover:shadow-lg transition-shadow">
+      {/* Logo et infos */}
+      <div className="flex items-start gap-3 mb-3">
+        <ToolLogo url={tool.logo_url} name={tool.name} size="md" />
+        <div className="flex-1">
+          <h3 className="font-semibold">{tool.name}</h3>
+          <p className="text-sm text-gray-600">{tool.category_name}</p>
+        </div>
+      </div>
+
+      {/* Pricing tier */}
+      <div className="mb-3">
+        <PricingBadge tier={tool.pricing_tier} />
+      </div>
+
+      {/* Actions */}
+      <div className="flex gap-2">
+        <button
+          onClick={onEdit}
+          className="flex-1 px-3 py-2 bg-blue-50 text-blue-600 rounded hover:bg-blue-100"
+        >
+          <Edit2 className="w-4 h-4 inline mr-1" />
+          Modifier
+        </button>
+        <button
+          onClick={onDelete}
+          className="px-3 py-2 bg-red-50 text-red-600 rounded hover:bg-red-100"
+        >
+          <Trash2 className="w-4 h-4" />
+        </button>
+      </div>
+    </div>
+  );
+}
+```
+
+### Modal de création/édition
+
+**Fichier :** `src/features/tools/modals/ToolModal/ToolForm.tsx`
+
+```typescript
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
+
+const toolSchema = z.object({
+  name: z.string().min(1, 'Le nom est requis'),
+  description: z.string().min(10, 'Description trop courte'),
+  pricing_tier: z.enum(['Gratuit', 'Freemium', 'Payant', 'Entreprise']),
+  category_id: z.string().uuid(),
+  website_url: z.string().url().optional(),
+  logo: z.instanceof(File).optional()
+});
+
+export function ToolForm({ tool, onSubmit }: ToolFormProps) {
+  const { register, handleSubmit, formState: { errors } } = useForm({
+    resolver: zodResolver(toolSchema),
+    defaultValues: tool || {}
+  });
+
+  const [uploading, setUploading] = useState(false);
+
+  const onSubmitForm = async (data: ToolFormData) => {
+    try {
+      // Upload logo si présent
+      let logoUrl = tool?.logo_url;
+      if (data.logo) {
+        setUploading(true);
+        logoUrl = await uploadLogo(data.logo);
+      }
+
+      // Créer ou mettre à jour l'outil
+      if (tool) {
+        await toolsApi.update(tool.id, { ...data, logo_url: logoUrl });
+      } else {
+        await toolsApi.create({ ...data, logo_url: logoUrl });
+      }
+
+      onSubmit();
+    } catch (error) {
+      toast.error('Erreur lors de la sauvegarde');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return (
+    <form onSubmit={handleSubmit(onSubmitForm)} className="space-y-4">
+      {/* Nom */}
+      <div>
+        <label className="block text-sm font-medium mb-1">Nom de l'outil</label>
+        <input
+          {...register('name')}
+          className="w-full px-3 py-2 border rounded-lg"
+        />
+        {errors.name && (
+          <p className="text-red-600 text-sm mt-1">{errors.name.message}</p>
+        )}
+      </div>
+
+      {/* Description */}
+      <div>
+        <label className="block text-sm font-medium mb-1">Description</label>
+        <textarea
+          {...register('description')}
+          rows={4}
+          className="w-full px-3 py-2 border rounded-lg"
+        />
+        {errors.description && (
+          <p className="text-red-600 text-sm mt-1">{errors.description.message}</p>
+        )}
+      </div>
+
+      {/* Catégorie */}
+      <div>
+        <label className="block text-sm font-medium mb-1">Catégorie</label>
+        <CategorySelect {...register('category_id')} />
+      </div>
+
+      {/* Pricing Tier */}
+      <div>
+        <label className="block text-sm font-medium mb-1">Tarification</label>
+        <PricingTierSelect {...register('pricing_tier')} />
+      </div>
+
+      {/* Logo Upload */}
+      <div>
+        <label className="block text-sm font-medium mb-1">Logo</label>
+        <LogoUpload {...register('logo')} currentUrl={tool?.logo_url} />
+      </div>
+
+      {/* Submit */}
+      <button
+        type="submit"
+        disabled={uploading}
+        className="w-full py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50"
+      >
+        {uploading ? 'Upload en cours...' : tool ? 'Mettre à jour' : 'Créer'}
+      </button>
+    </form>
+  );
+}
+```
+
+### Upload de logo
+
+```typescript
+async function uploadLogo(file: File): Promise<string> {
+  const fileExt = file.name.split('.').pop();
+  const fileName = `${Math.random()}.${fileExt}`;
+  const filePath = `tool_logos/${fileName}`;
+
+  const { error: uploadError } = await supabase.storage
+    .from('tool_logos')
+    .upload(filePath, file);
+
+  if (uploadError) {
+    throw new Error('Erreur lors de l\'upload du logo');
+  }
+
+  const { data } = supabase.storage
+    .from('tool_logos')
+    .getPublicUrl(filePath);
+
+  return data.publicUrl;
+}
+```
+
+---
+
+## Panel 2 : Workflows Management
+
+### Interface de gestion
+
+```typescript
+function WorkflowsPanel() {
+  const [workflows, setWorkflows] = useState<Workflow[]>([]);
+  const [filter, setFilter] = useState<'all' | 'active' | 'draft'>('all');
+
+  const filteredWorkflows = workflows.filter(w => {
+    if (filter === 'all') return true;
+    return w.status === filter;
+  });
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex justify-between items-center">
+        <h2 className="text-2xl font-bold">Gestion des parcours</h2>
+        <button
+          onClick={() => openWorkflowModal('create')}
+          className="px-4 py-2 bg-indigo-600 text-white rounded-lg"
+        >
+          + Nouveau parcours
+        </button>
+      </div>
+
+      {/* Filter par status */}
+      <div className="flex gap-2">
+        <StatusFilter value={filter} onChange={setFilter} />
+      </div>
+
+      {/* Liste des workflows */}
+      <div className="space-y-3">
+        {filteredWorkflows.map(workflow => (
+          <WorkflowAdminCard
+            key={workflow.id}
+            workflow={workflow}
+            onEdit={() => openWorkflowModal('edit', workflow)}
+            onToggleStatus={() => handleToggleStatus(workflow)}
+            onDelete={() => handleDeleteWorkflow(workflow.id)}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+```
+
+### WorkflowAdminCard
+
+```typescript
+function WorkflowAdminCard({ workflow, onEdit, onToggleStatus, onDelete }) {
+  const Icon = getIconComponent(workflow.icon);
+
+  return (
+    <div className="bg-white rounded-lg shadow-md p-6">
+      <div className="flex items-start justify-between">
+        {/* Infos */}
+        <div className="flex items-start gap-4">
+          <div className="p-3 bg-indigo-100 rounded-lg">
+            <Icon className="w-6 h-6 text-indigo-600" />
+          </div>
+          <div>
+            <h3 className="font-semibold text-lg">{workflow.title}</h3>
+            <p className="text-gray-600 text-sm mb-2">{workflow.description}</p>
+            <div className="flex gap-2 text-sm">
+              <DifficultyBadge level={workflow.difficulty} />
+              <span className="text-gray-500">{workflow.duration}</span>
+              <span className="text-gray-500">{workflow.steps.length} étapes</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Actions */}
+        <div className="flex gap-2">
+          <button
+            onClick={onToggleStatus}
+            className={`px-3 py-2 rounded-lg ${
+              workflow.status === 'active' 
+                ? 'bg-green-50 text-green-600' 
+                : 'bg-gray-50 text-gray-600'
+            }`}
+          >
+            {workflow.status === 'active' ? 'Actif' : 'Brouillon'}
+          </button>
+          <button
+            onClick={onEdit}
+            className="px-3 py-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100"
+          >
+            <Edit2 className="w-4 h-4" />
+          </button>
+          <button
+            onClick={onDelete}
+            className="px-3 py-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100"
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+```
+
+### Modal de création de workflow
+
+**Fichier :** `src/features/workflows/modals/WorkflowModal/WorkflowForm.tsx`
+
+```typescript
+export function WorkflowForm({ workflow, onSubmit }: WorkflowFormProps) {
+  const [steps, setSteps] = useState<WorkflowStep[]>(workflow?.steps || []);
+
+  const handleAddStep = () => {
+    setSteps([...steps, {
+      step_number: steps.length + 1,
+      tool_name: '',
+      action: '',
+      tool_url: '',
+      tool_description: ''
+    }]);
+  };
+
+  const handleUpdateStep = (index: number, field: string, value: any) => {
+    const newSteps = [...steps];
+    newSteps[index] = { ...newSteps[index], [field]: value };
+    setSteps(newSteps);
+  };
+
+  const handleRemoveStep = (index: number) => {
+    const newSteps = steps.filter((_, i) => i !== index);
+    // Réorganiser les step_number
+    setSteps(newSteps.map((step, i) => ({ ...step, step_number: i + 1 })));
+  };
+
+  return (
+    <form className="space-y-6">
+      {/* Informations générales */}
+      <div className="space-y-4">
+        <input
+          placeholder="Titre du parcours"
+          className="w-full px-3 py-2 border rounded-lg"
+        />
+        <textarea
+          placeholder="Description"
+          rows={3}
+          className="w-full px-3 py-2 border rounded-lg"
+        />
+        <div className="grid grid-cols-2 gap-4">
+          <DifficultySelect />
+          <input
+            placeholder="Durée (ex: 30min)"
+            className="px-3 py-2 border rounded-lg"
+          />
+        </div>
+        <IconPicker />
+      </div>
+
+      {/* Gestion des étapes */}
+      <div className="space-y-3">
+        <div className="flex justify-between items-center">
+          <h3 className="font-semibold">Étapes du parcours</h3>
+          <button
+            type="button"
+            onClick={handleAddStep}
+            className="px-3 py-2 bg-indigo-50 text-indigo-600 rounded-lg"
+          >
+            + Ajouter une étape
+          </button>
+        </div>
+
+        {steps.map((step, index) => (
+          <StepEditor
+            key={index}
+            step={step}
+            index={index}
+            onUpdate={(field, value) => handleUpdateStep(index, field, value)}
+            onRemove={() => handleRemoveStep(index)}
+          />
+        ))}
+      </div>
+
+      {/* Submit */}
+      <div className="flex gap-3">
+        <button
+          type="button"
+          onClick={() => onSubmit({ ...workflow, status: 'draft', steps })}
+          className="flex-1 py-3 border border-gray-300 rounded-lg hover:bg-gray-50"
+        >
+          Enregistrer en brouillon
+        </button>
+        <button
+          type="submit"
+          onClick={() => onSubmit({ ...workflow, status: 'active', steps })}
+          className="flex-1 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
+        >
+          Publier
+        </button>
+      </div>
+    </form>
+  );
+}
+```
+
+### StepEditor
+
+```typescript
+function StepEditor({ step, index, onUpdate, onRemove }) {
+  return (
+    <div className="bg-gray-50 p-4 rounded-lg space-y-3">
+      <div className="flex justify-between items-center">
+        <span className="font-semibold">Étape {step.step_number}</span>
+        <button
+          onClick={onRemove}
+          className="text-red-600 hover:text-red-700"
+        >
+          <Trash2 className="w-4 h-4" />
+        </button>
+      </div>
+
+      <input
+        placeholder="Nom de l'outil"
+        value={step.tool_name}
+        onChange={(e) => onUpdate('tool_name', e.target.value)}
+        className="w-full px-3 py-2 border rounded-lg"
+      />
+
+      <input
+        placeholder="URL de l'outil"
+        value={step.tool_url}
+        onChange={(e) => onUpdate('tool_url', e.target.value)}
+        className="w-full px-3 py-2 border rounded-lg"
+      />
+
+      <textarea
+        placeholder="Action à réaliser"
+        value={step.action}
+        onChange={(e) => onUpdate('action', e.target.value)}
+        rows={2}
+        className="w-full px-3 py-2 border rounded-lg"
+      />
+
+      <textarea
+        placeholder="Conseil pratique (optionnel)"
+        value={step.practical_tip}
+        onChange={(e) => onUpdate('practical_tip', e.target.value)}
+        rows={2}
+        className="w-full px-3 py-2 border rounded-lg"
+      />
+    </div>
+  );
+}
+```
+
+---
+
+## Panel 3 : Tool Packs Management
+
+### Interface de gestion
+
+```typescript
+function PacksPanel() {
+  const [packs, setPacks] = useState<ToolPack[]>([]);
+
+  return (
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <h2 className="text-2xl font-bold">Gestion des packs</h2>
+        <button
+          onClick={() => openPackModal('create')}
+          className="px-4 py-2 bg-indigo-600 text-white rounded-lg"
+        >
+          + Nouveau pack
+        </button>
+      </div>
+
+      <div className="grid md:grid-cols-2 gap-4">
+        {packs.map(pack => (
+          <PackAdminCard
+            key={pack.id}
+            pack={pack}
+            onEdit={() => openPackModal('edit', pack)}
+            onDelete={() => handleDeletePack(pack.id)}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+```
+
+### PackModal avec gestion des outils
+
+```typescript
+export function PackForm({ pack, onSubmit }: PackFormProps) {
+  const [selectedTools, setSelectedTools] = useState<string[]>(
+    pack?.tools?.map(t => t.id) || []
+  );
+  const [availableTools, setAvailableTools] = useState<EnhancedTool[]>([]);
+
+  useEffect(() => {
+    loadTools();
+  }, []);
+
+  const loadTools = async () => {
+    const tools = await toolsApi.list();
+    setAvailableTools(tools);
+  };
+
+  const handleToggleTool = (toolId: string) => {
+    setSelectedTools(prev =>
+      prev.includes(toolId)
+        ? prev.filter(id => id !== toolId)
+        : [...prev, toolId]
+    );
+  };
+
+  return (
+    <form className="space-y-6">
+      {/* Infos du pack */}
+      <div className="space-y-4">
+        <input
+          placeholder="Titre du pack"
+          className="w-full px-3 py-2 border rounded-lg"
+        />
+        <textarea
+          placeholder="Description"
+          rows={3}
+          className="w-full px-3 py-2 border rounded-lg"
+        />
+        <div className="grid grid-cols-2 gap-4">
+          <IconPicker />
+          <ColorPicker />
+        </div>
+      </div>
+
+      {/* Sélection des outils */}
+      <div className="space-y-3">
+        <h3 className="font-semibold">Outils inclus ({selectedTools.length})</h3>
+        <div className="max-h-96 overflow-y-auto space-y-2">
+          {availableTools.map(tool => (
+            <label
+              key={tool.id}
+              className="flex items-center gap-3 p-3 border rounded-lg cursor-pointer hover:bg-gray-50"
+            >
+              <input
+                type="checkbox"
+                checked={selectedTools.includes(tool.id)}
+                onChange={() => handleToggleTool(tool.id)}
+                className="w-5 h-5"
+              />
+              <ToolLogo url={tool.logo_url} name={tool.name} size="sm" />
+              <span>{tool.name}</span>
+            </label>
+          ))}
+        </div>
+      </div>
+
+      <button
+        type="submit"
+        className="w-full py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
+      >
+        {pack ? 'Mettre à jour' : 'Créer le pack'}
+      </button>
+    </form>
+  );
+}
+```
+
+---
+
+## Panel 4 : Quiz Management
+
+### Interface de gestion
+
+```typescript
+function QuizPanel() {
+  const [quizzes, setQuizzes] = useState<Quiz[]>([]);
+
+  return (
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <h2 className="text-2xl font-bold">Gestion des quiz</h2>
+        <button
+          onClick={() => openQuizBuilder()}
+          className="px-4 py-2 bg-indigo-600 text-white rounded-lg"
+        >
+          + Nouveau quiz
+        </button>
+      </div>
+
+      <div className="space-y-3">
+        {quizzes.map(quiz => (
+          <QuizAdminCard
+            key={quiz.id}
+            quiz={quiz}
+            onEdit={() => openQuizBuilder(quiz)}
+            onToggleActive={() => handleToggleActive(quiz)}
+            onAnalytics={() => openAnalytics(quiz)}
+            onDelete={() => handleDeleteQuiz(quiz.id)}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+```
+
+### Quiz Builder
+
+**Fichier :** `src/features/quiz/admin/QuizBuilder.tsx`
+
+```typescript
+export function QuizBuilder({ quiz, onSave }: QuizBuilderProps) {
+  const [questions, setQuestions] = useState<QuizQuestion[]>(
+    quiz?.questions || []
+  );
+
+  const handleAddQuestion = () => {
+    setQuestions([...questions, {
+      question_text: '',
+      question_type: 'single',
+      order_index: questions.length,
+      is_required: true,
+      answers: []
+    }]);
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Métadonnées du quiz */}
+      <div className="space-y-4">
+        <input
+          placeholder="Titre du quiz"
+          className="w-full px-3 py-2 border rounded-lg"
+        />
+        <textarea
+          placeholder="Description"
+          rows={2}
+          className="w-full px-3 py-2 border rounded-lg"
+        />
+        <input
+          placeholder="Slug (ex: maturite-numerique)"
+          className="w-full px-3 py-2 border rounded-lg"
+        />
+      </div>
+
+      {/* Questions */}
+      <div className="space-y-4">
+        <div className="flex justify-between items-center">
+          <h3 className="font-semibold">Questions ({questions.length})</h3>
+          <button
+            onClick={handleAddQuestion}
+            className="px-3 py-2 bg-indigo-50 text-indigo-600 rounded-lg"
+          >
+            + Ajouter une question
+          </button>
+        </div>
+
+        {questions.map((question, index) => (
+          <QuestionBuilder
+            key={index}
+            question={question}
+            index={index}
+            onUpdate={(updated) => updateQuestion(index, updated)}
+            onRemove={() => removeQuestion(index)}
+          />
+        ))}
+      </div>
+
+      {/* Recommandations */}
+      <RecommendationRulesEditor quizId={quiz?.id} />
+
+      {/* Actions */}
+      <div className="flex gap-3">
+        <button
+          onClick={() => onSave({ ...quiz, is_active: false })}
+          className="flex-1 py-3 border border-gray-300 rounded-lg"
+        >
+          Enregistrer (inactif)
+        </button>
+        <button
+          onClick={() => onSave({ ...quiz, is_active: true })}
+          className="flex-1 py-3 bg-indigo-600 text-white rounded-lg"
+        >
+          Publier
+        </button>
+      </div>
+    </div>
+  );
+}
+```
+
+### QuestionBuilder
+
+```typescript
+function QuestionBuilder({ question, index, onUpdate, onRemove }) {
+  const [answers, setAnswers] = useState(question.answers || []);
+
+  const handleAddAnswer = () => {
+    const newAnswers = [...answers, {
+      answer_text: '',
+      answer_value: '',
+      order_index: answers.length
+    }];
+    setAnswers(newAnswers);
+    onUpdate({ ...question, answers: newAnswers });
+  };
+
+  return (
+    <div className="bg-gray-50 p-4 rounded-lg space-y-3">
+      <div className="flex justify-between items-center">
+        <span className="font-semibold">Question {index + 1}</span>
+        <button onClick={onRemove} className="text-red-600">
+          <Trash2 className="w-4 h-4" />
+        </button>
+      </div>
+
+      <input
+        placeholder="Texte de la question"
+        value={question.question_text}
+        onChange={(e) => onUpdate({ ...question, question_text: e.target.value })}
+        className="w-full px-3 py-2 border rounded-lg"
+      />
+
+      <select
+        value={question.question_type}
+        onChange={(e) => onUpdate({ ...question, question_type: e.target.value })}
+        className="w-full px-3 py-2 border rounded-lg"
+      >
+        <option value="single">Choix unique</option>
+        <option value="multiple">Choix multiples</option>
+        <option value="scale">Échelle</option>
+      </select>
+
+      {/* Réponses */}
+      <div className="space-y-2">
+        <div className="flex justify-between items-center">
+          <span className="text-sm font-medium">Réponses</span>
+          <button
+            onClick={handleAddAnswer}
+            className="text-sm text-indigo-600"
+          >
+            + Ajouter
+          </button>
+        </div>
+        {answers.map((answer, i) => (
+          <div key={i} className="flex gap-2">
+            <input
+              placeholder="Texte de la réponse"
+              value={answer.answer_text}
+              onChange={(e) => {
+                const newAnswers = [...answers];
+                newAnswers[i].answer_text = e.target.value;
+                setAnswers(newAnswers);
+                onUpdate({ ...question, answers: newAnswers });
+              }}
+              className="flex-1 px-3 py-2 border rounded-lg"
+            />
+            <input
+              placeholder="Valeur"
+              value={answer.answer_value}
+              onChange={(e) => {
+                const newAnswers = [...answers];
+                newAnswers[i].answer_value = e.target.value;
+                setAnswers(newAnswers);
+                onUpdate({ ...question, answers: newAnswers });
+              }}
+              className="w-32 px-3 py-2 border rounded-lg"
+            />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+```
+
+---
+
+## Bonnes pratiques
+
+### ✅ À faire
+
+**Lazy loading des modals**
+```typescript
+const ToolModal = lazy(() => import('./features/tools/modals/ToolModal'));
+const WorkflowModal = lazy(() => import('./features/workflows/modals/WorkflowModal'));
+
+// Utilisation avec Suspense
+<Suspense fallback={<LoadingSpinner />}>
+  {isOpen && <ToolModal />}
+</Suspense>
+```
+
+**Validation avant suppression**
+```typescript
+const handleDelete = async (id: string) => {
+  if (!confirm('Êtes-vous sûr de vouloir supprimer cet élément ?')) {
+    return;
+  }
+  
+  try {
+    await toolsApi.delete(id);
+    toast.success('Suppression réussie');
+    reloadData();
+  } catch (error) {
+    toast.error('Erreur lors de la suppression');
+  }
+};
+```
+
+**Notifications de succès/erreur**
+```typescript
+try {
+  await toolsApi.create(data);
+  toast.success('Outil créé avec succès');
+  closeModal();
+  reloadTools();
+} catch (error) {
+  toast.error('Erreur lors de la création');
+}
+```
+
+### ❌ À éviter
+
+**Ne pas charger toutes les données au mount**
+```typescript
+// ❌ Mauvais : charge tout d'un coup
+useEffect(() => {
+  loadTools();
+  loadWorkflows();
+  loadPacks();
+  loadQuizzes();
+}, []);
+
+// ✅ Bon : charge uniquement l'onglet actif
+useEffect(() => {
+  if (activeTab === 'tools') loadTools();
+  if (activeTab === 'workflows') loadWorkflows();
+}, [activeTab]);
+```
+
+**Ne pas oublier le cleanup**
+```typescript
+// ✅ Toujours nettoyer les listeners
+useEffect(() => {
+  const subscription = supabase
+    .channel('tool_changes')
+    .on('postgres_changes', {}, handleChange)
+    .subscribe();
+
+  return () => {
+    subscription.unsubscribe();
+  };
+}, []);
+```
+
+---
+
+## Ressources
+
+<CardGroup cols={2}>
+  <Card title="Tools Feature" icon="wrench" href="/features/tools">
+    Documentation complète de la gestion des outils
+  </Card>
+  <Card title="Workflows Feature" icon="route" href="/features/workflows">
+    Documentation des parcours guidés
+  </Card>
+  <Card title="Tool Packs" icon="package" href="/features/tool-packs">
+    Gestion des collections d'outils
+  </Card>
+  <Card title="Quiz System" icon="clipboard-question" href="/features/quiz">
+    Système de diagnostic interactif
+  </Card>
+</CardGroup>

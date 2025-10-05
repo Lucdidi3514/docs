@@ -1,0 +1,611 @@
+---
+title: 'Feature Workflows - Parcours Guidés'
+description: 'Tutoriels étape par étape pour la transformation digitale'
+---
+
+## Vue d'ensemble
+
+Les **Workflows** (Parcours Guidés) sont des tutoriels structurés qui accompagnent les associations dans leurs projets digitaux étape par étape.
+
+**Objectif :** Démystifier les outils numériques avec des guides concrets et actionnables.
+
+**Statistiques :**
+- 3 niveaux de difficulté (Débutant, Intermédiaire, Expert)
+- Durée estimée par workflow (30min à 2h)
+- Recommandations d'outils intégrées
+- Templates et checklists inclus
+
+---
+
+## Architecture technique
+
+### Tables de base de données
+
+#### Table `workflows`
+
+```sql
+CREATE TABLE workflows (
+  id UUID PRIMARY KEY,
+  title TEXT NOT NULL,
+  description TEXT NOT NULL,
+  difficulty TEXT CHECK (difficulty IN ('débutant', 'intermédiaire', 'expert')),
+  duration TEXT NOT NULL,
+  category TEXT NOT NULL,
+  icon TEXT NOT NULL,
+  status TEXT CHECK (status IN ('active', 'draft')),
+  steps JSONB NOT NULL,
+  display_order INTEGER DEFAULT 0,
+  objective TEXT,
+  completion_message TEXT,
+  next_steps JSONB DEFAULT '[]',
+  resources JSONB DEFAULT '[]',
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+```
+
+#### Table `workflow_steps`
+
+```sql
+CREATE TABLE workflow_steps (
+  id UUID PRIMARY KEY,
+  workflow_id UUID REFERENCES workflows(id),
+  step_number INTEGER NOT NULL,
+  tool_name TEXT NOT NULL,
+  action TEXT NOT NULL,
+  tool_url TEXT,
+  tool_description TEXT,
+  detailed_instructions JSONB DEFAULT '[]',
+  practical_tip TEXT,
+  template TEXT,
+  template_description TEXT,
+  elements_to_include JSONB DEFAULT '[]',
+  completion_checklist TEXT[],
+  warnings TEXT[],
+  best_practices TEXT[],
+  warning_severity TEXT CHECK (warning_severity IN ('warning', 'danger', 'info')),
+  story JSONB,
+  visuals JSONB,
+  videos JSONB,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+```
+
+---
+
+### API Layer
+
+**Fichier :** `src/api/workflows.ts`
+
+```typescript
+import { supabase } from './client';
+import { handleSupabaseError } from './base';
+import type { Workflow, WorkflowStep } from './types';
+
+export const workflowsApi = {
+  /**
+   * Liste tous les workflows actifs
+   */
+  async list(): Promise<Workflow[]> {
+    const { data, error } = await supabase
+      .from('workflows')
+      .select('*')
+      .eq('status', 'active')
+      .order('display_order');
+
+    if (error) handleSupabaseError(error);
+    return data;
+  },
+
+  /**
+   * Récupère un workflow par ID avec ses steps
+   */
+  async getById(id: string): Promise<Workflow & { steps: WorkflowStep[] }> {
+    const [workflowRes, stepsRes] = await Promise.all([
+      supabase
+        .from('workflows')
+        .select('*')
+        .eq('id', id)
+        .single(),
+      supabase
+        .from('workflow_steps')
+        .select('*')
+        .eq('workflow_id', id)
+        .order('step_number'),
+    ]);
+
+    if (workflowRes.error) handleSupabaseError(workflowRes.error);
+    if (stepsRes.error) handleSupabaseError(stepsRes.error);
+
+    return {
+      ...workflowRes.data,
+      steps: stepsRes.data,
+    };
+  },
+
+  /**
+   * Crée un nouveau workflow
+   */
+  async create(workflow: Partial<Workflow>): Promise<Workflow> {
+    const { data, error } = await supabase
+      .from('workflows')
+      .insert(workflow)
+      .select()
+      .single();
+
+    if (error) handleSupabaseError(error);
+    return data;
+  },
+
+  /**
+   * Met à jour un workflow
+   */
+  async update(id: string, updates: Partial<Workflow>): Promise<Workflow> {
+    const { data, error } = await supabase
+      .from('workflows')
+      .update({ ...updates, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) handleSupabaseError(error);
+    return data;
+  },
+
+  /**
+   * Supprime un workflow et ses steps (cascade)
+   */
+  async delete(id: string): Promise<void> {
+    const { error } = await supabase
+      .from('workflows')
+      .delete()
+      .eq('id', id);
+
+    if (error) handleSupabaseError(error);
+  },
+};
+```
+
+---
+
+## Structure d'un workflow
+
+### Métadonnées
+
+```typescript
+interface Workflow {
+  id: string;
+  title: string;                    // "Créer ma première newsletter"
+  description: string;               // Résumé du parcours
+  difficulty: 'débutant' | 'intermédiaire' | 'expert';
+  duration: string;                  // "30min", "1h", "2h"
+  category: string;                  // "Communication", "Site Web", etc.
+  icon: string;                      // Nom d'icône Lucide (ex: "Mail")
+  status: 'active' | 'draft';
+  display_order: number;             // Ordre d'affichage
+  objective?: string;                // Objectif pédagogique
+  completion_message?: string;       // Message de félicitations
+}
+```
+
+### Steps (étapes)
+
+```typescript
+interface WorkflowStep {
+  step_number: number;
+  tool_name: string;                 // "Mailchimp"
+  action: string;                    // "Créer votre compte"
+  tool_url?: string;                 // Lien vers l'outil
+  tool_description?: string;
+  
+  // Instructions enrichies
+  detailed_instructions: Array<{
+    text: string;
+    type: 'text' | 'code' | 'link';
+  }>;
+  
+  practical_tip?: string;            // Astuce pratique
+  
+  // Templates
+  template?: string;
+  template_description?: string;
+  
+  // Checklist de complétion
+  completion_checklist?: string[];   // ["☐ Compte créé", "☐ Email vérifié"]
+  
+  // Warnings
+  warnings?: string[];
+  warning_severity?: 'warning' | 'danger' | 'info';
+  
+  // Best practices
+  best_practices?: string[];
+  
+  // Storytelling (future)
+  story?: {
+    persona: string;
+    situation: string;
+    goal: string;
+  };
+  
+  // Media (future)
+  visuals?: Array<{ url: string; caption: string }>;
+  videos?: Array<{ url: string; title: string }>;
+}
+```
+
+---
+
+## Exemples de workflows
+
+### Exemple 1 : Créer ma première newsletter
+
+```json
+{
+  "title": "Créer ma première newsletter",
+  "description": "Lancez une newsletter professionnelle en 30 minutes avec Mailchimp",
+  "difficulty": "débutant",
+  "duration": "30min",
+  "category": "Communication",
+  "icon": "Mail",
+  "status": "active",
+  "objective": "Être capable d'envoyer une newsletter à vos membres",
+  "steps": [
+    {
+      "step_number": 1,
+      "tool_name": "Mailchimp",
+      "action": "Créer votre compte gratuit",
+      "tool_url": "https://mailchimp.com/signup",
+      "detailed_instructions": [
+        {
+          "text": "Rendez-vous sur mailchimp.com/signup",
+          "type": "text"
+        },
+        {
+          "text": "Choisissez le plan Free (gratuit jusqu'à 500 contacts)",
+          "type": "text"
+        }
+      ],
+      "practical_tip": "Utilisez l'email de votre association pour garder tout centralisé",
+      "completion_checklist": [
+        "Compte créé",
+        "Email vérifié",
+        "Profil complété"
+      ]
+    },
+    {
+      "step_number": 2,
+      "tool_name": "Mailchimp",
+      "action": "Importer vos contacts",
+      "detailed_instructions": [
+        {
+          "text": "Créez une liste de contacts",
+          "type": "text"
+        },
+        {
+          "text": "Importez un fichier CSV ou copiez-collez vos emails",
+          "type": "text"
+        }
+      ],
+      "warnings": [
+        "Assurez-vous d'avoir le consentement RGPD de vos contacts"
+      ],
+      "warning_severity": "danger"
+    },
+    {
+      "step_number": 3,
+      "tool_name": "Mailchimp",
+      "action": "Créer votre première campagne",
+      "template": "Modèle de newsletter associative",
+      "template_description": "Structure type : En-tête, Actualités, Événements, Appel aux dons",
+      "best_practices": [
+        "Objet court et accrocheur (< 50 caractères)",
+        "Prévisualisation qui donne envie de cliquer",
+        "CTA clair (ex: 'Réserver ma place')"
+      ]
+    }
+  ]
+}
+```
+
+---
+
+### Exemple 2 : Organiser un événement
+
+```json
+{
+  "title": "Organiser un événement associatif",
+  "description": "De l'inscription à la communication, tous les outils nécessaires",
+  "difficulty": "intermédiaire",
+  "duration": "1h",
+  "category": "Événementiel",
+  "icon": "Calendar",
+  "steps": [
+    {
+      "step_number": 1,
+      "tool_name": "Tally",
+      "action": "Créer un formulaire d'inscription",
+      "detailed_instructions": [
+        {
+          "text": "Allez sur tally.so et créez un formulaire",
+          "type": "link"
+        }
+      ],
+      "elements_to_include": [
+        "Nom et prénom",
+        "Email",
+        "Nombre de participants",
+        "Régime alimentaire (si repas)",
+        "Acceptation RGPD"
+      ]
+    },
+    {
+      "step_number": 2,
+      "tool_name": "Canva",
+      "action": "Créer un visuel pour l'événement",
+      "template": "Modèle 'Événement association'",
+      "practical_tip": "Utilisez les dimensions Instagram (1080x1080) pour un maximum de compatibilité"
+    },
+    {
+      "step_number": 3,
+      "tool_name": "Mailchimp",
+      "action": "Envoyer une campagne d'annonce",
+      "completion_checklist": [
+        "Objet percutant",
+        "Visuel inséré",
+        "Lien vers formulaire Tally",
+        "Date et lieu clairs"
+      ]
+    }
+  ]
+}
+```
+
+---
+
+## Composants UI
+
+### WorkflowCard
+
+```typescript
+// src/components/workflows/WorkflowCard.tsx
+import { Clock, Users } from 'lucide-react';
+import { getIconComponent } from '@/utils/icons';
+
+interface WorkflowCardProps {
+  workflow: Workflow;
+  onClick: () => void;
+}
+
+export function WorkflowCard({ workflow, onClick }: WorkflowCardProps) {
+  const Icon = getIconComponent(workflow.icon);
+  
+  const difficultyColors = {
+    'débutant': 'bg-green-100 text-green-800',
+    'intermédiaire': 'bg-orange-100 text-orange-800',
+    'expert': 'bg-red-100 text-red-800',
+  };
+  
+  return (
+    <div
+      onClick={onClick}
+      className="p-6 border rounded-lg hover:shadow-lg transition cursor-pointer"
+    >
+      <div className="flex items-start gap-4">
+        <div className="p-3 bg-indigo-100 rounded-lg">
+          <Icon className="w-6 h-6 text-indigo-600" />
+        </div>
+        
+        <div className="flex-1">
+          <h3 className="font-semibold text-lg mb-2">
+            {workflow.title}
+          </h3>
+          
+          <p className="text-gray-600 text-sm mb-4">
+            {workflow.description}
+          </p>
+          
+          <div className="flex items-center gap-4 text-sm">
+            <span className={`px-2 py-1 rounded ${difficultyColors[workflow.difficulty]}`}>
+              {workflow.difficulty}
+            </span>
+            
+            <span className="flex items-center gap-1 text-gray-500">
+              <Clock className="w-4 h-4" />
+              {workflow.duration}
+            </span>
+            
+            <span className="text-gray-500">
+              {workflow.steps?.length || 0} étapes
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+```
+
+---
+
+### WorkflowStepper
+
+```typescript
+// src/components/workflows/WorkflowStepper.tsx
+interface WorkflowStepperProps {
+  steps: WorkflowStep[];
+  currentStep: number;
+  onStepClick: (stepNumber: number) => void;
+}
+
+export function WorkflowStepper({ steps, currentStep, onStepClick }: WorkflowStepperProps) {
+  return (
+    <div className="flex items-center justify-between mb-8">
+      {steps.map((step, index) => {
+        const isActive = currentStep === index;
+        const isCompleted = currentStep > index;
+        
+        return (
+          <div key={step.id} className="flex items-center flex-1">
+            <button
+              onClick={() => onStepClick(index)}
+              className={`
+                w-10 h-10 rounded-full flex items-center justify-center
+                ${isCompleted ? 'bg-green-500 text-white' :
+                  isActive ? 'bg-indigo-600 text-white' :
+                  'bg-gray-200 text-gray-600'}
+              `}
+            >
+              {isCompleted ? '✓' : index + 1}
+            </button>
+            
+            {index < steps.length - 1 && (
+              <div className={`h-1 flex-1 mx-2 ${
+                isCompleted ? 'bg-green-500' : 'bg-gray-200'
+              }`} />
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+```
+
+---
+
+## Hooks
+
+### useWorkflowProgress
+
+```typescript
+// src/features/workflows/hooks/useWorkflowProgress.ts
+import { useState } from 'react';
+
+export function useWorkflowProgress(totalSteps: number) {
+  const [currentStep, setCurrentStep] = useState(0);
+  const [completedSteps, setCompletedSteps] = useState<Set<number>>(new Set());
+  
+  const nextStep = () => {
+    if (currentStep < totalSteps - 1) {
+      setCompletedSteps(prev => new Set([...prev, currentStep]));
+      setCurrentStep(prev => prev + 1);
+    }
+  };
+  
+  const prevStep = () => {
+    if (currentStep > 0) {
+      setCurrentStep(prev => prev - 1);
+    }
+  };
+  
+  const goToStep = (step: number) => {
+    if (step >= 0 && step < totalSteps) {
+      setCurrentStep(step);
+    }
+  };
+  
+  const markStepComplete = (step: number) => {
+    setCompletedSteps(prev => new Set([...prev, step]));
+  };
+  
+  const progress = (completedSteps.size / totalSteps) * 100;
+  
+  return {
+    currentStep,
+    completedSteps,
+    progress,
+    nextStep,
+    prevStep,
+    goToStep,
+    markStepComplete,
+    isFirstStep: currentStep === 0,
+    isLastStep: currentStep === totalSteps - 1,
+  };
+}
+```
+
+---
+
+## RLS Policies
+
+```sql
+-- Public : lecture des workflows actifs uniquement
+CREATE POLICY "Allow public read active workflows"
+  ON workflows FOR SELECT
+  TO public
+  USING (status = 'active');
+
+CREATE POLICY "Allow public read steps of active workflows"
+  ON workflow_steps FOR SELECT
+  TO public
+  USING (
+    workflow_id IN (
+      SELECT id FROM workflows WHERE status = 'active'
+    )
+  );
+
+-- Authenticated : CRUD complet
+CREATE POLICY "Allow authenticated full access workflows"
+  ON workflows FOR ALL
+  TO authenticated
+  USING (true)
+  WITH CHECK (true);
+
+CREATE POLICY "Allow authenticated full access workflow_steps"
+  ON workflow_steps FOR ALL
+  TO authenticated
+  USING (true)
+  WITH CHECK (true);
+```
+
+---
+
+## Bonnes pratiques
+
+### ✅ À faire
+
+**Contenu pédagogique :**
+- Instructions claires et actionnables
+- Un objectif par étape
+- Checklist de validation
+- Tips pratiques basés sur l'expérience
+
+**Structure :**
+- 3-7 étapes max par workflow (sinon découper)
+- Durée réaliste (tester avant de publier)
+- Difficulté adaptée au public cible
+
+**UX :**
+- Progress bar visible
+- Possibilité de revenir en arrière
+- Sauvegarde de la progression (future)
+- Liens directs vers les outils
+
+### ❌ À éviter
+
+- Instructions trop vagues ("Configurez l'outil")
+- Étapes trop longues (> 15 min)
+- Oubli des prérequis (compte, budget, etc.)
+- Jargon technique sans explication
+
+---
+
+## Ressources
+
+<CardGroup cols={2}>
+  <Card title="Database Schema" icon="database" href="/database/schema">
+    Structure des tables workflows
+  </Card>
+  
+  <Card title="API Layer" icon="plug" href="/architecture/api-layer">
+    Utiliser workflowsApi
+  </Card>
+  
+  <Card title="Admin Dashboard" icon="shield" href="/features/admin">
+    Créer et gérer des workflows
+  </Card>
+  
+  <Card title="Patterns" icon="code" href="/architecture/patterns">
+    Modals, forms, hooks
+  </Card>
+</CardGroup>

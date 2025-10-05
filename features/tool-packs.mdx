@@ -1,0 +1,710 @@
+---
+title: "Packs d'Outils"
+description: "Collections curées d'outils pour des cas d'usage spécifiques avec système de badges et indicateurs de difficulté"
+---
+
+## Vue d'ensemble
+
+Les **Tool Packs** sont des collections curées d'outils regroupés par thème ou cas d'usage. Ils simplifient le choix en proposant des ensembles cohérents et testés.
+
+**Objectif :** Éviter la paralysie du choix en proposant des sélections prêtes à l'emploi.
+
+**Exemples de packs :**
+
+- Starter Pack (essentiels pour débuter)
+- Communication & Email
+- Automatisation
+- Paiements & Dons
+- Sites Web
+
+---
+
+## Architecture technique
+
+### Tables de base de données
+
+#### Table `tool_packs`
+
+```sql
+CREATE TABLE tool_packs (
+  id UUID PRIMARY KEY,
+  title TEXT NOT NULL,
+  description TEXT NOT NULL,
+  difficulty TEXT,
+  icon TEXT DEFAULT 'Package',
+  color TEXT DEFAULT 'blue',
+  display_order INTEGER DEFAULT 0,
+  status TEXT CHECK (status IN ('active', 'draft')) DEFAULT 'active',
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+```
+
+**Colonnes clés :**
+
+- `icon` : Nom d'icône Lucide (Package, Rocket, Mail, etc.)
+- `color` : Couleur thème (blue, green, orange, purple, red)
+- `display_order` : Position dans la liste (ordre d'affichage)
+- `status` : Seuls les packs 'active' sont visibles publiquement
+
+---
+
+#### Table `pack_tools` (Jointure)
+
+```sql
+CREATE TABLE pack_tools (
+  id UUID PRIMARY KEY,
+  pack_id UUID REFERENCES tool_packs(id) ON DELETE CASCADE,
+  tool_id UUID REFERENCES tools(id) ON DELETE CASCADE,
+  display_order INTEGER DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(pack_id, tool_id)
+);
+```
+
+**Relation Many-to-Many :**
+
+- Un pack contient plusieurs outils
+- Un outil peut être dans plusieurs packs
+- `display_order` pour ordonner les outils dans le pack
+
+---
+
+### API Layer
+
+**Fichier :** `src/api/packs.ts`
+
+```typescript
+import { supabase } from './client';
+import { handleSupabaseError } from './base';
+import type { ToolPack, EnhancedTool } from './types';
+
+export const packsApi = {
+  /**
+   * Liste tous les packs actifs avec nombre d'outils
+   */
+  async list(): Promise<Array<ToolPack & { tool_count: number }>> {
+    const { data, error } = await supabase
+      .from('tool_packs')
+      .select(`
+        *,
+        pack_tools(count)
+      `)
+      .eq('status', 'active')
+      .order('display_order');
+
+    if (error) handleSupabaseError(error);
+
+    return data.map(pack => ({
+      ...pack,
+      tool_count: pack.pack_tools[0]?.count || 0,
+    }));
+  },
+
+  /**
+   * Récupère un pack avec ses outils
+   */
+  async getById(id: string): Promise<ToolPack & { tools: EnhancedTool[] }> {
+    const { data, error } = await supabase
+      .from('tool_packs')
+      .select(`
+        *,
+        pack_tools(
+          display_order,
+          tool:tools(
+            *,
+            category:categories(name)
+          )
+        )
+      `)
+      .eq('id', id)
+      .single();
+
+    if (error) handleSupabaseError(error);
+
+    // Transform et trier par display_order
+    const tools = data.pack_tools
+      .sort((a, b) => a.display_order - b.display_order)
+      .map(pt => ({
+        ...pt.tool,
+        category_name: pt.tool.category?.name || 'Non catégorisé',
+      }));
+
+    return {
+      ...data,
+      tools,
+    };
+  },
+
+  /**
+   * Crée un nouveau pack
+   */
+  async create(pack: Partial<ToolPack>): Promise<ToolPack> {
+    const { data, error } = await supabase
+      .from('tool_packs')
+      .insert(pack)
+      .select()
+      .single();
+
+    if (error) handleSupabaseError(error);
+    return data;
+  },
+
+  /**
+   * Met à jour un pack
+   */
+  async update(id: string, updates: Partial<ToolPack>): Promise<ToolPack> {
+    const { data, error } = await supabase
+      .from('tool_packs')
+      .update({ ...updates, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) handleSupabaseError(error);
+    return data;
+  },
+
+  /**
+   * Supprime un pack (cascade sur pack_tools)
+   */
+  async delete(id: string): Promise<void> {
+    const { error } = await supabase
+      .from('tool_packs')
+      .delete()
+      .eq('id', id);
+
+    if (error) handleSupabaseError(error);
+  },
+
+  /**
+   * Ajoute un outil au pack
+   */
+  async addTool(packId: string, toolId: string, displayOrder?: number): Promise<void> {
+    const { error } = await supabase
+      .from('pack_tools')
+      .insert({
+        pack_id: packId,
+        tool_id: toolId,
+        display_order: displayOrder || 0,
+      });
+
+    if (error) handleSupabaseError(error);
+  },
+
+  /**
+   * Retire un outil du pack
+   */
+  async removeTool(packId: string, toolId: string): Promise<void> {
+    const { error } = await supabase
+      .from('pack_tools')
+      .delete()
+      .eq('pack_id', packId)
+      .eq('tool_id', toolId);
+
+    if (error) handleSupabaseError(error);
+  },
+
+  /**
+   * Réordonne les outils dans un pack
+   */
+  async reorderTools(
+    packId: string,
+    toolOrders: Array<{ toolId: string; displayOrder: number }>
+  ): Promise<void> {
+    for (const { toolId, displayOrder } of toolOrders) {
+      await supabase
+        .from('pack_tools')
+        .update({ display_order: displayOrder })
+        .eq('pack_id', packId)
+        .eq('tool_id', toolId);
+    }
+  },
+};
+```
+
+---
+
+## Structure d'un Tool Pack
+
+### Métadonnées
+
+```typescript
+interface ToolPack {
+  id: string;
+  title: string;                     // "Starter Pack"
+  description: string;               // "Essentiels pour débuter"
+  difficulty?: string;               // "débutant", "intermédiaire", "expert"
+  icon: string;                      // "Rocket" (nom d'icône Lucide)
+  color: string;                     // "blue", "green", "orange", etc.
+  display_order: number;             // Position dans la liste
+  status: 'active' | 'draft';
+  created_at: string;
+  updated_at: string;
+}
+```
+
+### Avec outils enrichis
+
+```typescript
+interface EnhancedToolPack extends ToolPack {
+  tool_count: number;                // Nombre d'outils dans le pack
+  tools?: EnhancedTool[];            // Liste complète des outils
+}
+```
+
+---
+
+## Exemples de packs
+
+### Starter Pack
+
+```json
+{
+  "title": "Starter Pack ⭐",
+  "description": "Les outils essentiels pour débuter sa transformation digitale",
+  "difficulty": "débutant",
+  "icon": "Rocket",
+  "color": "blue",
+  "display_order": 0,
+  "tools": [
+    {
+      "name": "Gmail",
+      "description": "Email professionnel gratuit",
+      "pricing_tier": "Gratuit"
+    },
+    {
+      "name": "Canva",
+      "description": "Design graphique sans compétences",
+      "pricing_tier": "Freemium"
+    },
+    {
+      "name": "Trello",
+      "description": "Gestion de projets visuels",
+      "pricing_tier": "Freemium"
+    },
+    {
+      "name": "Google Drive",
+      "description": "Stockage et partage de fichiers",
+      "pricing_tier": "Freemium"
+    }
+  ]
+}
+```
+
+---
+
+### Communication & Email
+
+```json
+{
+  "title": "Communication & Email",
+  "description": "Tout pour communiquer efficacement avec vos membres",
+  "difficulty": "intermédiaire",
+  "icon": "Mail",
+  "color": "green",
+  "display_order": 1,
+  "tools": [
+    {
+      "name": "Mailchimp",
+      "description": "Email marketing et newsletters",
+      "pricing_tier": "Freemium"
+    },
+    {
+      "name": "Canva",
+      "description": "Visuels pour réseaux sociaux",
+      "pricing_tier": "Freemium"
+    },
+    {
+      "name": "Buffer",
+      "description": "Planification réseaux sociaux",
+      "pricing_tier": "Freemium"
+    }
+  ]
+}
+```
+
+---
+
+### Automatisation
+
+```json
+{
+  "title": "Automatisation",
+  "description": "Gagnez du temps avec des workflows automatisés",
+  "difficulty": "expert",
+  "icon": "Zap",
+  "color": "orange",
+  "display_order": 2,
+  "tools": [
+    {
+      "name": "Zapier",
+      "description": "Connectez vos applications",
+      "pricing_tier": "Freemium"
+    },
+    {
+      "name": "Airtable",
+      "description": "Base de données no-code",
+      "pricing_tier": "Freemium"
+    },
+    {
+      "name": "Notion",
+      "description": "Workspace tout-en-un",
+      "pricing_tier": "Freemium"
+    }
+  ]
+}
+```
+
+---
+
+## Composants UI
+
+### PackCard
+
+```typescript
+// src/components/toolpacks/PackCard.tsx
+import { getIconComponent } from '@/utils/icons';
+
+interface PackCardProps {
+  pack: EnhancedToolPack;
+  onClick: () => void;
+}
+
+export function PackCard({ pack, onClick }: PackCardProps) {
+  const Icon = getIconComponent(pack.icon);
+  
+  const colorClasses = {
+    blue: 'bg-blue-100 text-blue-600',
+    green: 'bg-green-100 text-green-600',
+    orange: 'bg-orange-100 text-orange-600',
+    purple: 'bg-purple-100 text-purple-600',
+    red: 'bg-red-100 text-red-600',
+  };
+  
+  return (
+    <div
+      onClick={onClick}
+      className="p-6 border rounded-lg hover:shadow-lg transition cursor-pointer"
+    >
+      <div className={`inline-flex p-3 rounded-lg mb-4 ${colorClasses[pack.color]}`}>
+        <Icon className="w-6 h-6" />
+      </div>
+      
+      <h3 className="font-semibold text-lg mb-2">
+        {pack.title}
+      </h3>
+      
+      <p className="text-gray-600 text-sm mb-4">
+        {pack.description}
+      </p>
+      
+      <div className="flex items-center gap-4 text-sm">
+        {pack.difficulty && (
+          <span className="px-2 py-1 bg-gray-100 rounded text-gray-700">
+            {pack.difficulty}
+          </span>
+        )}
+        
+        <span className="text-gray-500">
+          {pack.tool_count} outil{pack.tool_count > 1 ? 's' : ''}
+        </span>
+      </div>
+    </div>
+  );
+}
+```
+
+---
+
+### PackDetails
+
+```typescript
+// src/components/toolpacks/PackDetails.tsx
+interface PackDetailsProps {
+  pack: EnhancedToolPack & { tools: EnhancedTool[] };
+}
+
+export function PackDetails({ pack }: PackDetailsProps) {
+  return (
+    <div className="space-y-6">
+      <div>
+        <h2 className="text-2xl font-bold mb-2">{pack.title}</h2>
+        <p className="text-gray-600">{pack.description}</p>
+      </div>
+      
+      <div className="space-y-3">
+        <h3 className="font-semibold">Outils inclus ({pack.tools.length})</h3>
+        
+        {pack.tools.map((tool) => (
+          <div
+            key={tool.id}
+            className="flex items-center gap-4 p-4 border rounded-lg"
+          >
+            {tool.logo_url && (
+              <img
+                src={tool.logo_url}
+                alt={tool.name}
+                className="w-12 h-12 object-contain"
+              />
+            )}
+            
+            <div className="flex-1">
+              <h4 className="font-medium">{tool.name}</h4>
+              <p className="text-sm text-gray-600">{tool.description}</p>
+            </div>
+            
+            <span className={`
+              px-3 py-1 rounded text-sm
+              ${tool.pricing_tier === 'Gratuit' ? 'bg-green-100 text-green-700' :
+                tool.pricing_tier === 'Freemium' ? 'bg-blue-100 text-blue-700' :
+                'bg-orange-100 text-orange-700'}
+            `}>
+              {tool.pricing_tier}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+```
+
+---
+
+## Badge System
+
+### Badges recommandés
+
+Ajoutez des badges pour mettre en valeur certains packs :
+
+```typescript
+interface PackBadge {
+  label: string;
+  color: string;
+  icon?: string;
+}
+
+const badges: Record<string, PackBadge> = {
+  recommended: {
+    label: '⭐ Recommandé',
+    color: 'bg-yellow-100 text-yellow-800',
+  },
+  popular: {
+    label: '🔥 Populaire',
+    color: 'bg-red-100 text-red-800',
+  },
+  new: {
+    label: '✨ Nouveau',
+    color: 'bg-blue-100 text-blue-800',
+  },
+  beginner: {
+    label: '👋 Débutant',
+    color: 'bg-green-100 text-green-800',
+  },
+};
+```
+
+**Usage dans PackCard :**
+
+```typescript
+{pack.badges?.map((badgeKey) => {
+  const badge = badges[badgeKey];
+  return (
+    <span key={badgeKey} className={`px-2 py-1 rounded text-xs ${badge.color}`}>
+      {badge.label}
+    </span>
+  );
+})}
+```
+
+---
+
+## Hooks
+
+### useToolPacks
+
+```typescript
+// src/features/tool-packs/hooks/useToolPacks.ts
+import { useState, useEffect } from 'react';
+import { packsApi } from '@/api';
+import type { ToolPack } from '@/api/types';
+
+export function useToolPacks() {
+  const [packs, setPacks] = useState<ToolPack[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  
+  useEffect(() => {
+    loadPacks();
+  }, []);
+  
+  const loadPacks = async () => {
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const data = await packsApi.list();
+      setPacks(data);
+    } catch (err) {
+      setError('Erreur de chargement des packs');
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+  
+  return {
+    packs,
+    loading,
+    error,
+    refetch: loadPacks,
+  };
+}
+```
+
+---
+
+## RLS Policies
+
+```sql
+-- Public : lecture des packs actifs uniquement
+CREATE POLICY "Allow public read active packs"
+  ON tool_packs FOR SELECT
+  TO public
+  USING (status = 'active');
+
+CREATE POLICY "Allow public read pack_tools"
+  ON pack_tools FOR SELECT
+  TO public
+  USING (
+    pack_id IN (
+      SELECT id FROM tool_packs WHERE status = 'active'
+    )
+  );
+
+-- Authenticated : CRUD complet
+CREATE POLICY "Allow authenticated full access tool_packs"
+  ON tool_packs FOR ALL
+  TO authenticated
+  USING (true)
+  WITH CHECK (true);
+
+CREATE POLICY "Allow authenticated full access pack_tools"
+  ON pack_tools FOR ALL
+  TO authenticated
+  USING (true)
+  WITH CHECK (true);
+```
+
+---
+
+## Cas d'usage
+
+### Filtrer par difficulté
+
+```typescript
+const beginnerPacks = packs.filter(
+  pack => pack.difficulty === 'débutant'
+);
+
+const expertPacks = packs.filter(
+  pack => pack.difficulty === 'expert'
+);
+```
+
+### Recherche de packs
+
+```typescript
+const searchPacks = (query: string) => {
+  const search = query.toLowerCase();
+  
+  return packs.filter(pack => 
+    pack.title.toLowerCase().includes(search) ||
+    pack.description.toLowerCase().includes(search)
+  );
+};
+```
+
+### Recommandation basée sur quiz
+
+```typescript
+// Dans quiz results
+const recommendedPackIds = ['pack-1', 'pack-2'];
+
+const recommendedPacks = packs.filter(
+  pack => recommendedPackIds.includes(pack.id)
+);
+```
+
+---
+
+## Bonnes pratiques
+
+### ✅ À faire
+
+**Curation :**
+
+- 3-7 outils par pack (ni trop, ni trop peu)
+- Cohérence thématique forte
+- Outils testés et approuvés
+- Mix de pricing (gratuit + freemium)
+
+**Naming :**
+
+- Titres clairs et descriptifs
+- Description concise (1-2 lignes)
+- Badges pertinents
+
+**Ordering :**
+
+- Starter Pack en premier
+- Packs populaires ensuite
+- Packs avancés à la fin
+
+### ❌ À éviter
+
+- Packs trop larges ("Tous les outils")
+- Doublons entre packs
+- Outils obsolètes ou fermés
+- Descriptions vagues
+
+---
+
+## Analytics (Future)
+
+Trackez l'utilisation des packs :
+
+```typescript
+interface PackAnalytics {
+  pack_id: string;
+  views: number;
+  tool_clicks: number;
+  quiz_recommendations: number;
+}
+```
+
+**Métriques utiles :**
+
+- Packs les plus consultés
+- Taux de clic sur les outils
+- Provenance (quiz, navigation, recherche)
+
+---
+
+## Ressources
+
+<CardGroup cols={2}>
+  <Card title="Database Schema" icon="database" href="/database/schema">
+    Structure des tables tool_packs
+  </Card>
+  <Card title="API Layer" icon="plug" href="/architecture/api-layer">
+    Utiliser packsApi
+  </Card>
+  <Card title="Admin Dashboard" icon="shield" href="/features/admin">
+    Créer et gérer des packs
+  </Card>
+  <Card title="Quiz Feature" icon="clipboard-question" href="/features/quiz">
+    Recommandations via quiz
+  </Card>
+</CardGroup>

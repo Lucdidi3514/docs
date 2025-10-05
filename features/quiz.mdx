@@ -1,0 +1,530 @@
+---
+title: 'Quiz Diagnostic System'
+description: 'Interactive assessment tool for personalized digital maturity recommendations'
+---
+
+## Vue d'ensemble
+
+Le système de quiz permet aux associations d'évaluer leur maturité numérique via un questionnaire interactif. Basé sur leurs réponses, le système génère des recommandations personnalisées d'outils et de packs adaptés à leurs besoins.
+
+**Caractéristiques principales :**
+- Questions à choix unique, multiple ou échelle
+- Logique conditionnelle pour recommandations ciblées
+- Parcours progressif avec barre de progression
+- Capture d'email optionnelle pour suivi
+- Tracking des réponses avec potentiel analytique
+- Interface publique + gestion admin complète
+
+---
+
+## Architecture technique
+
+### Tables impliquées
+
+Le système quiz utilise **5 tables PostgreSQL** interconnectées :
+
+**1. quizzes** - Définitions des quiz
+```typescript
+interface Quiz {
+  id: string;
+  title: string;
+  description: string | null;
+  slug: string; // Pour routing (ex: /quiz/maturite-numerique)
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+```
+
+**2. quiz_questions** - Questions du quiz
+```typescript
+interface QuizQuestion {
+  id: string;
+  quiz_id: string;
+  question_text: string;
+  question_type: 'single' | 'multiple' | 'scale';
+  order_index: number;
+  is_required: boolean;
+  help_text: string | null;
+  created_at: string;
+  updated_at: string;
+}
+```
+
+**3. quiz_answers** - Options de réponse
+```typescript
+interface QuizAnswer {
+  id: string;
+  question_id: string;
+  answer_text: string;
+  answer_value: string; // Valeur pour logique conditionnelle
+  order_index: number;
+  created_at: string;
+}
+```
+
+**4. quiz_recommendations** - Règles de recommandation
+```typescript
+interface QuizRecommendation {
+  id: string;
+  quiz_id: string;
+  condition_logic: Record<string, any>; // JSONB avec conditions
+  recommended_pack_ids: string[];
+  recommended_tool_ids: string[];
+  recommendation_text: string | null;
+  priority: number;
+  created_at: string;
+}
+```
+
+**5. quiz_responses** - Soumissions utilisateurs
+```typescript
+interface QuizResponse {
+  id: string;
+  quiz_id: string;
+  answers: Record<string, any>; // JSONB des réponses
+  recommended_pack_ids: string[];
+  recommended_tool_ids: string[];
+  email: string | null;
+  created_at: string;
+}
+```
+
+### API Layer
+
+**Fichier :** `src/api/quiz.ts`
+
+```typescript
+import { quizApi } from '@/api';
+
+// Récupérer un quiz actif par slug
+const quiz = await quizApi.getBySlug('maturite-numerique');
+
+// Soumettre une réponse
+const response = await quizApi.submitResponse({
+  quizId: quiz.id,
+  answers: { q1: 'beginner', q2: ['email', 'social'] },
+  email: 'contact@association.fr' // Optionnel
+});
+
+// Récupérer les recommandations
+const recommendations = await quizApi.getRecommendations(
+  quiz.id,
+  response.answers
+);
+```
+
+### Types TypeScript
+
+**Fichier :** `src/types/quiz.ts`
+
+```typescript
+export interface QuizWithQuestions extends Quiz {
+  questions: QuizQuestion[];
+}
+
+export interface QuestionWithAnswers extends QuizQuestion {
+  answers: QuizAnswer[];
+}
+
+export interface QuizSubmission {
+  quizId: string;
+  answers: Record<string, string | string[]>;
+  email?: string;
+}
+
+export interface QuizResult {
+  recommended_packs: ToolPack[];
+  recommended_tools: EnhancedTool[];
+  recommendation_text?: string;
+}
+```
+
+---
+
+## Flux utilisateur
+
+### 1. Affichage du quiz
+
+**Page :** `src/features/quiz/pages/QuizPage.tsx`
+
+```typescript
+import { useParams } from 'react-router-dom';
+import { useQuiz } from '../hooks/useQuiz';
+
+export function QuizPage() {
+  const { slug } = useParams();
+  const { quiz, currentQuestion, progress, handleAnswer } = useQuiz(slug!);
+
+  return (
+    <div className="max-w-2xl mx-auto p-6">
+      {/* Progress Bar */}
+      <div className="mb-8">
+        <div className="h-2 bg-gray-200 rounded-full">
+          <div 
+            className="h-2 bg-gradient-to-r from-indigo-600 to-blue-500 rounded-full transition-all"
+            style={{ width: `${progress}%` }}
+          />
+        </div>
+        <p className="text-sm text-gray-600 mt-2">
+          Question {currentQuestion + 1} sur {quiz.questions.length}
+        </p>
+      </div>
+
+      {/* Question Display */}
+      <QuestionCard 
+        question={quiz.questions[currentQuestion]}
+        onAnswer={handleAnswer}
+      />
+    </div>
+  );
+}
+```
+
+### 2. Gestion des réponses
+
+**Hook :** `src/features/quiz/hooks/useQuiz.ts`
+
+```typescript
+export function useQuiz(slug: string) {
+  const [answers, setAnswers] = useState<Record<string, any>>({});
+  const [currentQuestion, setCurrentQuestion] = useState(0);
+
+  const handleAnswer = (questionId: string, answer: string | string[]) => {
+    setAnswers(prev => ({ ...prev, [questionId]: answer }));
+    
+    // Passer à la question suivante
+    if (currentQuestion < quiz.questions.length - 1) {
+      setCurrentQuestion(prev => prev + 1);
+    } else {
+      // Dernière question : soumettre le quiz
+      submitQuiz();
+    }
+  };
+
+  const submitQuiz = async () => {
+    const response = await quizApi.submitResponse({
+      quizId: quiz.id,
+      answers,
+      email: emailCapture
+    });
+
+    // Récupérer les recommandations
+    const recommendations = await quizApi.getRecommendations(
+      quiz.id,
+      answers
+    );
+
+    setResults(recommendations);
+  };
+
+  return { quiz, currentQuestion, progress, handleAnswer };
+}
+```
+
+### 3. Affichage des résultats
+
+**Component :** `src/features/quiz/components/QuizResults.tsx`
+
+```typescript
+export function QuizResults({ results }: { results: QuizResult }) {
+  return (
+    <div className="space-y-8">
+      {/* Message personnalisé */}
+      {results.recommendation_text && (
+        <div className="bg-blue-50 border-l-4 border-blue-500 p-6 rounded-r-lg">
+          <p className="text-gray-700">{results.recommendation_text}</p>
+        </div>
+      )}
+
+      {/* Packs recommandés */}
+      {results.recommended_packs.length > 0 && (
+        <section>
+          <h2 className="text-2xl font-bold mb-4">Packs recommandés</h2>
+          <div className="grid md:grid-cols-2 gap-4">
+            {results.recommended_packs.map(pack => (
+              <PackCard key={pack.id} pack={pack} />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* Outils recommandés */}
+      {results.recommended_tools.length > 0 && (
+        <section>
+          <h2 className="text-2xl font-bold mb-4">Outils recommandés</h2>
+          <div className="grid md:grid-cols-3 gap-4">
+            {results.recommended_tools.map(tool => (
+              <ToolCard key={tool.id} tool={tool} />
+            ))}
+          </div>
+        </section>
+      )}
+    </div>
+  );
+}
+```
+
+---
+
+## Logique conditionnelle
+
+### Structure de condition_logic
+
+Le champ JSONB `condition_logic` dans `quiz_recommendations` permet de définir des règles complexes :
+
+```json
+{
+  "operator": "AND",
+  "conditions": [
+    {
+      "question_id": "q1_maturity",
+      "operator": "equals",
+      "value": "beginner"
+    },
+    {
+      "question_id": "q2_tools",
+      "operator": "contains",
+      "value": "email"
+    }
+  ]
+}
+```
+
+**Opérateurs supportés :**
+- `equals` : Valeur exacte
+- `contains` : Contient la valeur (pour choix multiples)
+- `greater_than` : Supérieur à (pour échelles)
+- `less_than` : Inférieur à
+
+**Logique imbriquée avec OR :**
+```json
+{
+  "operator": "OR",
+  "conditions": [
+    { "question_id": "q1", "operator": "equals", "value": "beginner" },
+    { "question_id": "q1", "operator": "equals", "value": "intermediate" }
+  ]
+}
+```
+
+### Évaluation des conditions
+
+**Fichier :** `src/features/quiz/utils/evaluateConditions.ts`
+
+```typescript
+export function evaluateConditions(
+  conditions: ConditionLogic,
+  answers: Record<string, any>
+): boolean {
+  if (conditions.operator === 'AND') {
+    return conditions.conditions.every(cond => 
+      evaluateSingleCondition(cond, answers)
+    );
+  }
+  
+  if (conditions.operator === 'OR') {
+    return conditions.conditions.some(cond => 
+      evaluateSingleCondition(cond, answers)
+    );
+  }
+  
+  return false;
+}
+
+function evaluateSingleCondition(
+  condition: Condition,
+  answers: Record<string, any>
+): boolean {
+  const answer = answers[condition.question_id];
+  
+  switch (condition.operator) {
+    case 'equals':
+      return answer === condition.value;
+    case 'contains':
+      return Array.isArray(answer) && answer.includes(condition.value);
+    case 'greater_than':
+      return Number(answer) > Number(condition.value);
+    case 'less_than':
+      return Number(answer) < Number(condition.value);
+    default:
+      return false;
+  }
+}
+```
+
+---
+
+## Composants UI
+
+### QuestionCard
+
+**Fichier :** `src/features/quiz/components/QuestionCard.tsx`
+
+```typescript
+export function QuestionCard({ 
+  question, 
+  onAnswer 
+}: { 
+  question: QuestionWithAnswers;
+  onAnswer: (answer: string | string[]) => void;
+}) {
+  const [selected, setSelected] = useState<string | string[]>(
+    question.question_type === 'multiple' ? [] : ''
+  );
+
+  return (
+    <div className="bg-white p-8 rounded-xl shadow-md">
+      <h2 className="text-2xl font-bold mb-2">{question.question_text}</h2>
+      
+      {question.help_text && (
+        <p className="text-gray-600 mb-6">{question.help_text}</p>
+      )}
+
+      <div className="space-y-3">
+        {question.answers.map(answer => (
+          <AnswerOption
+            key={answer.id}
+            answer={answer}
+            type={question.question_type}
+            selected={selected}
+            onSelect={setSelected}
+          />
+        ))}
+      </div>
+
+      <button
+        onClick={() => onAnswer(selected)}
+        disabled={!selected || (Array.isArray(selected) && selected.length === 0)}
+        className="mt-6 w-full py-3 bg-gradient-to-r from-indigo-600 to-blue-500 
+                   text-white font-semibold rounded-lg hover:shadow-lg 
+                   disabled:opacity-50 disabled:cursor-not-allowed"
+      >
+        Suivant
+      </button>
+    </div>
+  );
+}
+```
+
+### AnswerOption
+
+```typescript
+function AnswerOption({ answer, type, selected, onSelect }) {
+  const isSelected = type === 'multiple' 
+    ? selected.includes(answer.answer_value)
+    : selected === answer.answer_value;
+
+  const handleClick = () => {
+    if (type === 'multiple') {
+      onSelect(prev => 
+        isSelected 
+          ? prev.filter(v => v !== answer.answer_value)
+          : [...prev, answer.answer_value]
+      );
+    } else {
+      onSelect(answer.answer_value);
+    }
+  };
+
+  return (
+    <button
+      onClick={handleClick}
+      className={`w-full p-4 text-left rounded-lg border-2 transition-all
+        ${isSelected 
+          ? 'border-indigo-600 bg-indigo-50' 
+          : 'border-gray-200 hover:border-gray-300'
+        }`}
+    >
+      <div className="flex items-center gap-3">
+        {type === 'multiple' ? (
+          <div className={`w-5 h-5 border-2 rounded ${isSelected ? 'bg-indigo-600 border-indigo-600' : 'border-gray-300'}`}>
+            {isSelected && <Check className="w-4 h-4 text-white" />}
+          </div>
+        ) : (
+          <div className={`w-5 h-5 border-2 rounded-full ${isSelected ? 'bg-indigo-600 border-indigo-600' : 'border-gray-300'}`} />
+        )}
+        <span className="font-medium">{answer.answer_text}</span>
+      </div>
+    </button>
+  );
+}
+```
+
+---
+
+## Bonnes pratiques
+
+### ✅ À faire
+
+**Validation des réponses**
+```typescript
+// Vérifier que toutes les questions requises ont une réponse
+const allRequiredAnswered = quiz.questions
+  .filter(q => q.is_required)
+  .every(q => answers[q.id]);
+```
+
+**Gestion d'erreurs**
+```typescript
+try {
+  await quizApi.submitResponse(submission);
+} catch (error) {
+  if (error instanceof ApiError) {
+    toast.error('Erreur lors de la soumission du quiz');
+  }
+}
+```
+
+**Optimisation des recommandations**
+```typescript
+// Trier les recommandations par priorité
+const sortedRecommendations = recommendations.sort(
+  (a, b) => b.priority - a.priority
+);
+```
+
+### ❌ À éviter
+
+**Ne pas stocker les réponses dans localStorage**
+```typescript
+// ❌ Mauvais : perte de données si navigateur fermé
+localStorage.setItem('quiz_answers', JSON.stringify(answers));
+
+// ✅ Bon : tout dans le state React, soumission finale en DB
+const [answers, setAnswers] = useState({});
+```
+
+**Ne pas charger tous les quiz en même temps**
+```typescript
+// ❌ Mauvais
+const allQuizzes = await quizApi.listAll();
+
+// ✅ Bon : charger uniquement le quiz actif demandé
+const quiz = await quizApi.getBySlug(slug);
+```
+
+**Ne pas oublier la validation côté serveur**
+```typescript
+// Les RLS policies assurent que seules les soumissions valides sont insérées
+// Toujours vérifier côté client ET serveur
+```
+
+---
+
+## Ressources
+
+<CardGroup cols={2}>
+  <Card title="Admin Dashboard" icon="shield" href="/features/admin">
+    Gestion complète des quiz dans l'interface admin
+  </Card>
+  <Card title="Database Schema" icon="database" href="/database/schema">
+    Structure détaillée des tables quiz
+  </Card>
+  <Card title="API Layer" icon="code" href="/development/api-layer">
+    Utilisation de quizApi pour les opérations CRUD
+  </Card>
+  <Card title="Tool Packs" icon="package" href="/features/tool-packs">
+    Packs recommandés dans les résultats du quiz
+  </Card>
+</CardGroup>
