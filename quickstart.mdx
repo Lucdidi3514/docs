@@ -1,14 +1,21 @@
----
-title: 'Démarrage rapide'
-description: 'Installez et lancez Kit'Asso en local en 10 minutes'
----
-
 ## Prérequis
 
-<Check>**Node.js 18+** installé ([Télécharger](https://nodejs.org))</Check>
-<Check>**npm** ou **yarn** installé</Check>
-<Check>**Compte Supabase** créé ([S'inscrire](https://supabase.com))</Check>
-<Check>**Git** installé</Check>
+<Check>
+  **Node.js 18+** installé ([Télécharger](https://nodejs.org))
+</Check>
+
+ <Check>
+  **npm** ou **yarn** installé
+</Check>
+
+ <Check>
+  **Compte Supabase** créé ([S'inscrire](https://supabase.com))
+</Check>
+
+ <Check>
+  **Git** installé
+</Check>
+
 
 ---
 
@@ -21,100 +28,98 @@ description: 'Installez et lancez Kit'Asso en local en 10 minutes'
     cd kitasso
     ```
   </Step>
-  
   <Step title="Installer les dépendances">
     ```bash
     npm install
     ```
-    
+
     **Dépendances principales :**
+
     - react 18.3.1
     - vite 6.3.5
     - @supabase/supabase-js 2.x
     - react-router-dom 6.x
     - tailwindcss 3.x
-    
-    <Tip>L'installation prend environ 2-3 minutes</Tip>
+
+    <Tip>
+      L'installation prend environ 2-3 minutes
+    </Tip>
   </Step>
-  
   <Step title="Configurer Supabase">
     ### Créer un projet Supabase
-    
+
     1. Allez sur [supabase.com](https://supabase.com)
     2. Créez un nouveau projet
     3. Notez l'URL et la clé API (anon key)
-    
+
     ### Créer le fichier `.env`
-    
+
     ```bash
     # À la racine du projet
     touch .env
     ```
-    
+
     Ajoutez ces variables :
-    
+
     ```bash
     VITE_SUPABASE_URL=https://xxxxx.supabase.co
     VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
     ```
-    
+
     <Warning>
       Ne commitez JAMAIS le fichier `.env` ! Il est déjà dans `.gitignore`
     </Warning>
-    
     ### Où trouver ces valeurs ?
-    
+
     Dans votre dashboard Supabase :
+
     - **Settings** → **API**
     - Copiez **URL** et **anon public** key
   </Step>
-  
   <Step title="Initialiser la base de données">
     ### Exécuter les migrations
-    
+
     Les migrations sont dans `supabase/migrations/`. Vous avez 2 options :
-    
+
     **Option A : Via le Dashboard Supabase** (recommandé pour démarrer)
-    
+
     1. Ouvrez **SQL Editor** dans votre dashboard
     2. Exécutez les migrations dans l'ordre chronologique
     3. Commencez par `20240101000000_initial_schema.sql` (exemple)
-    
+
     **Option B : Via Supabase CLI** (si installé)
-    
+
     ```bash
     supabase db push
     ```
-    
+
     <Info>
       Il y a **43 fichiers de migration** à exécuter. Le dashboard vous permet de les copier/coller un par un.
     </Info>
-    
     ### Créer les buckets Storage
-    
+
     Dans **Storage** du dashboard :
-    
+
     1. Créez un bucket `tool_logos`
        - Public : ✅ Oui
        - File size limit : 2MB
        - Allowed MIME types : `image/*`
-    
     2. Créez un bucket `site_assets`
        - Public : ✅ Oui
        - File size limit : 5MB
        - Allowed MIME types : `image/*, video/*`
   </Step>
-  
   <Step title="Vérifier l'installation">
     Testez la connexion Supabase :
-    
+
     ```bash
     npm run dev
     ```
-    
-    L'application devrait démarrer sur **http://localhost:5173**
-    
+
+    L'application devrait démarrer sur [**http://localhost:5173**](http://localhost:5173)
+
     **Vérifications :**
+
     - ✅ Page d'accueil s'affiche
     - ✅ Catalogue d'outils charge (vide au début)
     - ✅ Pas d'erreurs console liées à Supabase
@@ -132,6 +137,7 @@ npm run dev
 ```
 
 **URLs disponibles :**
+
 - 🏠 **Home** : http://localhost:5173
 - 🔐 **Admin** : http://localhost:5173/admin
 - 📊 **Quiz** : http://localhost:5173/quiz/diagnostic (si créé)
@@ -174,17 +180,15 @@ Une fois connecté en admin :
 1. **Créer des catégories**
    - Allez dans l'onglet **Tools** du dashboard
    - Créez des catégories (ex: "Communication", "Gestion", "Site Web")
-
 2. **Ajouter des outils**
-   - Cliquez sur **+ Nouvel outil**
+   - Cliquez sur **\+ Nouvel outil**
    - Remplissez le formulaire
    - Uploadez un logo
    - Assignez une catégorie
    - Sauvegardez
-
 3. **Créer un workflow**
    - Allez dans l'onglet **Workflows**
-   - Cliquez sur **+ Nouveau workflow**
+   - Cliquez sur **\+ Nouveau workflow**
    - Définissez les étapes
    - Publiez (status = active)
 
@@ -308,9 +312,11 @@ npm run analyze          # Analyser la taille du bundle
 **Cause :** Connexion Supabase échoue
 
 **Solutions :**
+
 1. Vérifiez que `.env` contient les bonnes valeurs
 2. Vérifiez que votre projet Supabase est actif
 3. Testez la connexion directement :
+
    ```typescript
    // Dans la console du navigateur
    const { data } = await window.supabase.from('tools').select('*');
@@ -322,6 +328,7 @@ npm run analyze          # Analyser la taille du bundle
 **Cause :** Politiques RLS bloquent l'accès
 
 **Solution :**
+
 1. Vérifiez que RLS est activé sur toutes les tables
 2. Vérifiez que les policies sont créées
 3. Testez avec un utilisateur authentifié
@@ -331,6 +338,7 @@ npm run analyze          # Analyser la taille du bundle
 **Cause :** Pas authentifié ou session expirée
 
 **Solution :**
+
 1. Reconnectez-vous via `/login`
 2. Vérifiez dans la console : `localStorage.getItem('supabase.auth.token')`
 3. Si null, créez un nouvel utilisateur admin
@@ -340,6 +348,7 @@ npm run analyze          # Analyser la taille du bundle
 **Cause :** Buckets Storage mal configurés
 
 **Solution :**
+
 1. Vérifiez que les buckets existent
 2. Vérifiez qu'ils sont **publics**
 3. Testez l'URL d'une image directement dans le navigateur
@@ -352,15 +361,12 @@ npm run analyze          # Analyser la taille du bundle
   <Card title="Explorer l'architecture" icon="sitemap" href="/architecture/overview">
     Comprendre l'organisation du code
   </Card>
-  
   <Card title="Créer votre premier outil" icon="wrench" href="/features/tools">
     Guide de la feature Tools
   </Card>
-  
   <Card title="API Layer" icon="plug" href="/development/api-layer">
     Utiliser l'abstraction Supabase
   </Card>
-  
   <Card title="Conventions de code" icon="book" href="/development/conventions">
     Standards et bonnes pratiques
   </Card>
@@ -375,4 +381,4 @@ Besoin d'aide ?
 - 📖 **Documentation** : Parcourez les sections ci-dessous
 - 💬 **GitHub Discussions** : Posez vos questions
 - 🐛 **Issues** : Signalez un bug
-- 📧 **Email** : contact@lucdidion.lu
+- 📧 **Email** : [contact@lucdidion.lu](mailto:contact@lucdidion.lu)

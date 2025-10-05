@@ -1,18 +1,10 @@
----
-title: 'Bienvenue sur Kit'Asso'
-description: 'Boîte à outils numérique pour associations françaises'
----
+<img
+  className="hidden dark:block"
+  src="/images/hero-dark.png"
+  alt="Kit'Asso Hero"
+/>
 
-<img 
-  className="block dark:hidden" 
-  src="/images/hero-light.png" 
-  alt="Kit'Asso Hero" 
-/>
-<img 
-  className="hidden dark:block" 
-  src="/images/hero-dark.png" 
-  alt="Kit'Asso Hero" 
-/>
+![Hero Light Pn](/hero-light.png)
 
 ## Qu'est-ce que Kit'Asso ?
 
@@ -28,15 +20,12 @@ Kit'Asso est une plateforme complète qui aide les associations françaises à d
   <Card title="100+ Outils" icon="wrench">
     Catalogue exhaustif d'outils numériques
   </Card>
-  
   <Card title="13 Tables" icon="database">
     Architecture Supabase complète avec RLS
   </Card>
-  
   <Card title="~5,200 Lignes" icon="code">
     Codebase TypeScript structurée
   </Card>
-  
   <Card title="43 Migrations" icon="arrows-rotate">
     Évolution trackée de la base de données
   </Card>
@@ -49,6 +38,7 @@ Kit'Asso est une plateforme complète qui aide les associations françaises à d
 ### 🔍 Discovery & Comparaison d'outils
 
 Explorez un catalogue de 100+ outils numériques :
+
 - Recherche avancée avec filtres multiples
 - Comparaison côte à côte de 2 outils
 - Système de favoris persistant
@@ -63,12 +53,14 @@ Explorez un catalogue de 100+ outils numériques :
 ### 🛤️ Parcours Guidés (Workflows)
 
 Des tutoriels pas à pas pour vos projets digitaux :
+
 - 3 niveaux de difficulté (Débutant, Intermédiaire, Expert)
 - Recommandations d'outils intégrées
 - Checklists de complétion
 - Templates et bonnes pratiques
 
 **Exemples de workflows :**
+
 - "Créer ma première newsletter" (30 min)
 - "Organiser un événement" (1h)
 - "Créer un site vitrine" (45 min)
@@ -82,6 +74,7 @@ Des tutoriels pas à pas pour vos projets digitaux :
 ### 📦 Tool Packs (Collections curées)
 
 Des bundles thématiques pour démarrer rapidement :
+
 - Starter Pack ⭐ (essentiels débutants)
 - Communication & Email
 - Automatisation
@@ -97,6 +90,7 @@ Des bundles thématiques pour démarrer rapidement :
 ### 📊 Quiz Diagnostic
 
 Évaluation interactive pour recommandations personnalisées :
+
 - Questions adaptées au contexte associatif
 - Logique conditionnelle avancée
 - Recommandations d'outils et packs
@@ -111,6 +105,7 @@ Des bundles thématiques pour démarrer rapidement :
 ### ⚙️ Dashboard Admin
 
 Interface de gestion complète :
+
 - CRUD complet sur tous les contenus
 - Upload de logos vers Supabase Storage
 - Éditeur visuel de workflows
@@ -134,7 +129,6 @@ Interface de gestion complète :
     - **Lucide React** pour 300+ icônes
     - **react-window** pour virtualisation
   </Accordion>
-  
   <Accordion title="Backend & Database">
     - **Supabase** (PostgreSQL + Auth + Storage)
     - **13 tables** avec relations complètes
@@ -142,14 +136,12 @@ Interface de gestion complète :
     - **2 buckets Storage** (logos + assets)
     - **43 migrations** trackées
   </Accordion>
-  
   <Accordion title="Déploiement">
     - **Netlify** pour hosting frontend
     - **SPA redirects** configurés
     - **Environment variables** pour Supabase
     - **Optimisations** : code splitting, lazy loading
   </Accordion>
-  
   <Accordion title="Testing & Quality">
     - **Vitest 3.2.4** pour tests unitaires
     - **@testing-library/react** pour composants
@@ -187,15 +179,12 @@ graph TD
   <Card title="Architecture globale" icon="sitemap" href="/architecture/overview">
     Vue d'ensemble du projet
   </Card>
-  
   <Card title="Feature-Based" icon="layer-group" href="/architecture/feature-based">
     Organisation par domaine métier
   </Card>
-  
   <Card title="API Layer" icon="plug" href="/architecture/api-layer">
     Couche d'abstraction Supabase
   </Card>
-  
   <Card title="Database Schema" icon="database" href="/database/schema">
     13 tables détaillées
   </Card>
@@ -213,19 +202,19 @@ graph TD
     npm install
     ```
   </Step>
-  
   <Step title="Configuration Supabase">
     Créez un fichier `.env` :
+
     ```bash
     VITE_SUPABASE_URL=your_supabase_url
     VITE_SUPABASE_ANON_KEY=your_anon_key
     ```
   </Step>
-  
   <Step title="Lancer le serveur">
     ```bash
     npm run dev
     ```
+
     Ouvrez http://localhost:5173
   </Step>
 </Steps>
@@ -244,11 +233,9 @@ graph TD
   <Step title="Quickstart">
     [Installation locale](/quickstart)
   </Step>
-  
   <Step title="Architecture">
     [Comprendre l'organisation](/architecture/overview)
   </Step>
-  
   <Step title="Première feature">
     [Feature Tools en détail](/features/tools)
   </Step>
@@ -260,11 +247,9 @@ graph TD
   <Card title="API Layer" icon="plug" href="/development/api-layer">
     Abstraction Supabase
   </Card>
-  
   <Card title="Custom Hooks" icon="hook" href="/development/hooks">
     Logique métier réutilisable
   </Card>
-  
   <Card title="Testing" icon="flask" href="/development/testing">
     Vitest + Testing Library
   </Card>
@@ -289,7 +274,6 @@ Kit'Asso est un projet en constante évolution. Pour contribuer :
   <Card title="GitHub Issues" icon="github" href="https://github.com/votre-org/kitasso/issues">
     Signaler un bug ou proposer une feature
   </Card>
-  
   <Card title="Discussions" icon="comments" href="https://github.com/votre-org/kitasso/discussions">
     Questions et échanges
   </Card>
