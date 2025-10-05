@@ -1,6 +1,6 @@
 ---
-title: 'Conventions de Code'
-description: 'Standards de développement, naming, structure et bonnes pratiques pour Kit\'Asso'
+title: "Conventions de Code"
+description: "Standards de développement, naming, structure et bonnes pratiques"
 ---
 
 ## Vue d'ensemble
@@ -8,6 +8,7 @@ description: 'Standards de développement, naming, structure et bonnes pratiques
 Ce guide définit les conventions de code pour maintenir une base de code cohérente, lisible et maintenable dans Kit'Asso.
 
 **Principes fondamentaux :**
+
 - Clarté avant concision
 - Cohérence avant performance (sauf cas critique)
 - Type safety stricte avec TypeScript
@@ -21,6 +22,7 @@ Ce guide définit les conventions de code pour maintenir une base de code cohér
 ### Fichiers et Dossiers
 
 **Composants React :** PascalCase
+
 ```
 ToolCard.tsx
 WorkflowModal.tsx
@@ -28,6 +30,7 @@ AppHeader.tsx
 ```
 
 **Hooks :** camelCase avec préfixe `use`
+
 ```
 useAppData.ts
 useFavorites.ts
@@ -35,6 +38,7 @@ useToolFilters.ts
 ```
 
 **Utilitaires :** camelCase
+
 ```
 colors.ts
 sanitization.ts
@@ -42,6 +46,7 @@ icons.ts
 ```
 
 **API modules :** camelCase
+
 ```
 tools.ts
 workflows.ts
@@ -49,6 +54,7 @@ auth.ts
 ```
 
 **Dossiers :** kebab-case
+
 ```
 tool-packs/
 quiz-diagnostic/
@@ -60,6 +66,7 @@ workflow-steps/
 ### Variables et Fonctions
 
 **Variables :** camelCase
+
 ```typescript
 const toolCount = 10;
 const selectedCategory = 'communication';
@@ -67,6 +74,7 @@ const isLoading = false;
 ```
 
 **Constantes :** UPPER_SNAKE_CASE
+
 ```typescript
 const API_BASE_URL = 'https://api.example.com';
 const MAX_RETRIES = 3;
@@ -74,6 +82,7 @@ const FAVORITES_KEY = 'kitasso_favorites';
 ```
 
 **Fonctions :** camelCase, verbe + nom
+
 ```typescript
 function loadTools() { }
 function handleToolClick() { }
@@ -81,6 +90,7 @@ function validateToolForm() { }
 ```
 
 **Event handlers :** `handle` + Event + Subject
+
 ```typescript
 const handleSubmitForm = () => { };
 const handleClickTool = () => { };
@@ -88,6 +98,7 @@ const handleChangeCategory = () => { };
 ```
 
 **Booleans :** préfixe `is`, `has`, `should`, `can`
+
 ```typescript
 const isActive = true;
 const hasPermission = false;
@@ -100,6 +111,7 @@ const canEdit = false;
 ### Types et Interfaces
 
 **Interfaces :** PascalCase
+
 ```typescript
 interface Tool {
   id: string;
@@ -113,12 +125,14 @@ interface ToolCardProps {
 ```
 
 **Types :** PascalCase
+
 ```typescript
 type PricingTier = 'Gratuit' | 'Freemium' | 'Payant' | 'Entreprise';
 type ModalMode = 'create' | 'edit' | 'preview';
 ```
 
 **Enums :** PascalCase (clés et valeur)
+
 ```typescript
 enum WorkflowStatus {
   Active = 'active',
@@ -133,6 +147,7 @@ enum WorkflowStatus {
 ### Composant React
 
 **Pattern standard :**
+
 ```typescript
 // 1. Imports externes
 import { useState, useEffect } from 'react';
@@ -183,6 +198,7 @@ export function ToolCard({ tool, onClick }: ToolCardProps) {
 ### Module API
 
 **Pattern standard :**
+
 ```typescript
 // 1. Imports
 import { supabase } from './client';
@@ -213,6 +229,7 @@ export const toolsApi = {
 ### Type Annotations
 
 **Toujours typer les paramètres de fonction**
+
 ```typescript
 // ✅ Bon
 function calculateTotal(price: number, quantity: number): number {
@@ -226,6 +243,7 @@ function calculateTotal(price, quantity) {
 ```
 
 **Typer les retours de fonction async**
+
 ```typescript
 // ✅ Bon
 async function loadTools(): Promise<Tool[]> {
@@ -238,7 +256,8 @@ async function loadTools() {
 }
 ```
 
-**Éviter `any`, utiliser `unknown` si nécessaire**
+**``Éviter any, utiliser unknown si nécessaire``**
+
 ```typescript
 // ✅ Bon
 function processData(data: unknown) {
@@ -258,6 +277,7 @@ function processData(data: any) {
 ### Interfaces vs Types
 
 **Interface pour objets et classes**
+
 ```typescript
 interface User {
   id: string;
@@ -267,6 +287,7 @@ interface User {
 ```
 
 **Type pour unions et intersections**
+
 ```typescript
 type Status = 'active' | 'draft' | 'archived';
 type ToolWithCategory = Tool & { category_name: string };
@@ -279,6 +300,7 @@ type ToolWithCategory = Tool & { category_name: string };
 ### Props Destructuring
 
 **Destructurer dans la signature**
+
 ```typescript
 // ✅ Bon
 export function ToolCard({ tool, onClick }: ToolCardProps) {
@@ -295,18 +317,21 @@ export function ToolCard(props: ToolCardProps) {
 
 ### Conditional Rendering
 
-**Utiliser `&&` pour conditions simples**
+**`Utiliser && pour conditions simples`**
+
 ```typescript
 {isLoading && <LoadingSpinner />}
 {error && <ErrorMessage message={error} />}
 ```
 
 **Utiliser ternaire pour if/else**
+
 ```typescript
 {user ? <Dashboard /> : <Login />}
 ```
 
 **Éviter les ternaires imbriqués**
+
 ```typescript
 // ❌ Mauvais
 {status === 'loading' ? <Spinner /> : status === 'error' ? <Error /> : <Content />}
@@ -322,6 +347,7 @@ export function ToolCard(props: ToolCardProps) {
 ### State Management
 
 **Nommer les setters de façon cohérente**
+
 ```typescript
 const [tools, setTools] = useState<Tool[]>([]);
 const [loading, setLoading] = useState(false);
@@ -329,6 +355,7 @@ const [searchQuery, setSearchQuery] = useState('');
 ```
 
 **Utiliser functional updates pour state basé sur état précédent**
+
 ```typescript
 // ✅ Bon
 setCount(prev => prev + 1);
@@ -345,6 +372,7 @@ setCount(count + 1);
 ### Tailwind Classes
 
 **Ordre des classes Tailwind**
+
 ```typescript
 // 1. Layout (flex, grid)
 // 2. Spacing (p, m)
@@ -357,6 +385,7 @@ setCount(count + 1);
 ```
 
 **Utiliser clsx pour classes conditionnelles**
+
 ```typescript
 import { clsx } from 'clsx';
 
@@ -376,6 +405,7 @@ import { clsx } from 'clsx';
 **Format :** `type(scope): description`
 
 **Types :**
+
 - `feat`: Nouvelle fonctionnalité
 - `fix`: Correction de bug
 - `docs`: Documentation
@@ -385,6 +415,7 @@ import { clsx } from 'clsx';
 - `chore`: Tâches de maintenance
 
 **Exemples :**
+
 ```bash
 feat(tools): add comparison mode
 fix(workflows): correct step navigation bug
@@ -413,7 +444,7 @@ docs/architecture-guide
 
 ### TSDoc pour fonctions publiques
 
-```typescript
+````typescript
 /**
  * Récupère tous les outils filtrés par critères
  * 
@@ -429,13 +460,14 @@ docs/architecture-guide
 async function list(filters?: ToolFilters): Promise<EnhancedTool[]> {
   // Implementation
 }
-```
+````
 
 ---
 
 ### Inline Comments
 
 **Commenter le "pourquoi", pas le "quoi"**
+
 ```typescript
 // ✅ Bon
 // Debounce pour éviter trop de requêtes pendant la saisie
@@ -447,6 +479,7 @@ const debouncedSearch = debounce(searchQuery, 300);
 ```
 
 **Éviter les commentaires évidents**
+
 ```typescript
 // ❌ Mauvais
 // Incrémenter le compteur

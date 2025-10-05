@@ -1,6 +1,6 @@
 ---
-title: 'API Layer'
-description: 'Utilisation de la couche d\'abstraction Supabase centralisée'
+title: "API Layer"
+description: "Utilisation de la couche d'abstraction Supabase centralisée"
 ---
 
 ## Vue d'ensemble
@@ -8,9 +8,11 @@ description: 'Utilisation de la couche d\'abstraction Supabase centralisée'
 L'API Layer est une couche d'abstraction TypeScript qui centralise toutes les interactions avec Supabase. Elle fournit des fonctions type-safe, une gestion d'erreurs cohérente et un retry logic automatique.
 
 **Principe fondamental :**
+
 > Aucune requête Supabase directe dans les composants. Tout passe par `/api`.
 
 **Avantages :**
+
 - Type safety avec TypeScript strict
 - Gestion d'erreurs centralisée
 - Retry logic pour résilience réseau
@@ -19,6 +21,7 @@ L'API Layer est une couche d'abstraction TypeScript qui centralise toutes les in
 - Refactoring facile (changement de backend transparent)
 
 **Structure :**
+
 ```
 src/api/
 ├── client.ts          # Singleton Supabase
@@ -111,6 +114,7 @@ export function handleSupabaseError(error: any): ApiError {
 ```
 
 **Usage :**
+
 ```typescript
 try {
   const data = await toolsApi.list();
@@ -645,6 +649,7 @@ export const authApi = {
 ### Pattern recommandé
 
 **❌ Mauvais : Requête Supabase directe**
+
 ```typescript
 function ToolsList() {
   const [tools, setTools] = useState([]);
@@ -659,6 +664,7 @@ function ToolsList() {
 ```
 
 **✅ Bon : Via API Layer**
+
 ```typescript
 import { toolsApi } from '@/api';
 
@@ -727,6 +733,7 @@ function ToolsList() {
 ### ✅ À faire
 
 **Toujours typer les retours API**
+
 ```typescript
 // ✅ Bon
 async list(): Promise<EnhancedTool[]> {
@@ -742,6 +749,7 @@ async list() {
 ```
 
 **Gérer toutes les erreurs**
+
 ```typescript
 try {
   const tool = await toolsApi.create(newTool);
@@ -756,6 +764,7 @@ try {
 ```
 
 **Utiliser les filtres typés**
+
 ```typescript
 const filters: ToolFilters = {
   category_id: 'uuid-123',
@@ -771,6 +780,7 @@ const tools = await toolsApi.list(filters);
 ### ❌ À éviter
 
 **Ne pas catcher les erreurs silencieusement**
+
 ```typescript
 // ❌ Mauvais
 try {
@@ -789,6 +799,7 @@ try {
 ```
 
 **Ne pas faire de mutations sans confirmation**
+
 ```typescript
 // ❌ Mauvais
 const handleDelete = async (id: string) => {
