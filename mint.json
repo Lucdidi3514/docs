@@ -5,7 +5,7 @@
     "dark": "/logo/LD.png",
     "light": "/logo/LD.png"
   },
-  "favicon": "/favicon.png",
+  "favicon": "/Favicon.png",
   "colors": {
     "primary": "#4F46E5",
     "light": "#6366F1",
@@ -21,7 +21,7 @@
       "url": "https://github.com/Lucdidi3514/assopedia-v2"
     },
     {
-      "name": "Demo",
+      "name": "Kit'Asso",
       "url": "https://assopedia.lucdidion.lu/"
     }
   ],
