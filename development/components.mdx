@@ -1,6 +1,6 @@
 ---
-title: 'Composants UI'
-description: 'Bibliothèque de composants React réutilisables et pattern de composition'
+title: "Composants UI."
+description: "Bibliothèque de composants React réutilisables et pattern de composition"
 ---
 
 ## Vue d'ensemble
@@ -8,6 +8,7 @@ description: 'Bibliothèque de composants React réutilisables et pattern de com
 Kit'Asso suit une architecture de composants basée sur la composition et la réutilisabilité. Les composants sont organisés par niveau d'abstraction et domaine fonctionnel.
 
 **Organisation :**
+
 ```
 src/components/
 ├── ui/                 # Composants de base (Button, Input, Card)
@@ -20,6 +21,7 @@ src/components/
 ```
 
 **Principes :**
+
 - Single Responsibility: un composant = une responsabilité
 - Composition over Inheritance
 - Props typées avec TypeScript
@@ -101,6 +103,7 @@ Button.displayName = 'Button';
 ```
 
 **Usage :**
+
 ```typescript
 <Button variant="primary" onClick={handleClick}>
   Enregistrer
@@ -419,6 +422,7 @@ FormInput.displayName = 'FormInput';
 ```
 
 **Usage avec React Hook Form :**
+
 ```typescript
 import { useForm } from 'react-hook-form';
 import { FormInput } from '@/components/forms/FormInput';
@@ -588,6 +592,7 @@ export function Modal({ isOpen, onClose, title, children, size = 'md', footer }:
 ### ✅ À faire
 
 **Composition de composants**
+
 ```typescript
 // ✅ Bon : composition
 <Card hoverable>
@@ -606,6 +611,7 @@ export function Modal({ isOpen, onClose, title, children, size = 'md', footer }:
 ```
 
 **Props par défaut**
+
 ```typescript
 interface ButtonProps {
   variant?: 'primary' | 'secondary';
@@ -618,6 +624,7 @@ function Button({ variant = 'primary', size = 'md', ...props }: ButtonProps) {
 ```
 
 **ForwardRef pour composants form**
+
 ```typescript
 export const Input = forwardRef<HTMLInputElement, InputProps>((props, ref) => {
   return <input ref={ref} {...props} />;
@@ -629,6 +636,7 @@ export const Input = forwardRef<HTMLInputElement, InputProps>((props, ref) => {
 ### ❌ À éviter
 
 **Trop de responsabilités**
+
 ```typescript
 // ❌ Mauvais : fait trop de choses
 function ToolCardWithFavoriteAndCompareAndModal() {

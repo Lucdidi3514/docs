@@ -1,6 +1,6 @@
 ---
-title: 'Testing'
-description: 'Guide complet pour tester avec Vitest, React Testing Library et mocks'
+title: "Testing."
+description: "Guide complet pour tester avec Vitest, React Testing Library et mocks"
 ---
 
 ## Vue d'ensemble
@@ -8,6 +8,7 @@ description: 'Guide complet pour tester avec Vitest, React Testing Library et mo
 Kit'Asso utilise **Vitest** comme test runner et **React Testing Library** pour tester les composants. L'approche privilégie les tests qui reflètent l'utilisation réelle par les utilisateurs.
 
 **Stack de test :**
+
 - Vitest 3.2.4 (test runner rapide, Vite-native)
 - @testing-library/react (tests composants)
 - @testing-library/jest-dom (matchers DOM)
@@ -523,6 +524,7 @@ export { renderWithProviders as render };
 ```
 
 **Usage :**
+
 ```typescript
 import { render, screen } from '@/test/testUtils';
 
@@ -569,11 +571,13 @@ npm run test:coverage
 ```
 
 **Output :**
+
 ```
 Coverage report in coverage/index.html
 ```
 
 **Ouvrir dans le navigateur :**
+
 ```bash
 open coverage/index.html
 ```
@@ -599,6 +603,7 @@ coverage: {
 ### ✅ À faire
 
 **Tester le comportement, pas l'implémentation**
+
 ```typescript
 // ✅ Bon : test du comportement utilisateur
 it('should add tool to favorites when heart is clicked', async () => {
@@ -614,6 +619,7 @@ it('should call setFavorites with new array', () => {
 ```
 
 **Utiliser des queries accessibles**
+
 ```typescript
 // ✅ Bon : queries par rôle/label
 screen.getByRole('button', { name: /enregistrer/i });
@@ -625,6 +631,7 @@ screen.getByClassName('tool-card');
 ```
 
 **Mock au bon niveau**
+
 ```typescript
 // ✅ Bon : mock l'API, pas les hooks
 vi.mock('@/api', () => ({
@@ -642,6 +649,7 @@ vi.mock('@/hooks/useAppData');
 ### ❌ À éviter
 
 **Ne pas tester les détails d'implémentation**
+
 ```typescript
 // ❌ Mauvais
 expect(component.state.count).toBe(1);
@@ -651,6 +659,7 @@ expect(screen.getByText('Count: 1')).toBeInTheDocument();
 ```
 
 **Ne pas ignorer les erreurs de console**
+
 ```typescript
 // ❌ Mauvais
 vi.spyOn(console, 'error').mockImplementation(() => {});
