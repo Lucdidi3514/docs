@@ -1,6 +1,6 @@
 ---
-title: 'Guide de Démarrage Développeur'
-description: 'Installation locale en 10 minutes et premier pas dans le codebase'
+title: "Guide de Démarrage Développeur."
+description: "Installation locale en 10 minutes et premier pas dans le codebase"
 ---
 
 ## Vue d'ensemble
@@ -8,6 +8,7 @@ description: 'Installation locale en 10 minutes et premier pas dans le codebase'
 Ce guide vous permet de configurer Kit'Asso en local et de commencer à développer rapidement. En 10 minutes, vous aurez un environnement fonctionnel avec base de données Supabase et serveur de développement Vite.
 
 **Prérequis :**
+
 - Node.js 18+ installé
 - npm ou yarn
 - Compte Supabase (gratuit)
@@ -41,6 +42,7 @@ npm install
 ```
 
 **Dépendances principales installées :**
+
 - React 18 + TypeScript
 - Vite 6.3.5
 - Supabase Client
@@ -66,7 +68,8 @@ npm install
 **3.2 Récupérer les credentials**
 
 Dans le dashboard Supabase :
-1. Aller dans **Settings** > **API**
+
+1. Aller dans **Settings** \> **API**
 2. Copier **Project URL** (commence par `https://xxxxx.supabase.co`)
 3. Copier **anon public** key (longue chaîne JWT)
 
@@ -80,7 +83,8 @@ cp .env.example .env
 nano .env  # ou code .env
 ```
 
-**Contenu de `.env` :**
+**`Contenu de .env :`**
+
 ```bash
 VITE_SUPABASE_URL=https://xxxxx.supabase.co
 VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
@@ -97,6 +101,7 @@ VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 3. Exécuter migration par migration
 
 **Alternative : Script automatique**
+
 ```bash
 # Si Supabase CLI installé
 npm install -g supabase
@@ -105,6 +110,7 @@ supabase db push
 ```
 
 **Tables créées (13) :**
+
 - tools, categories, filters, tool_features
 - workflows, workflow_steps
 - tool_packs, pack_tools
@@ -113,7 +119,8 @@ supabase db push
 
 **4.2 Créer les Storage Buckets**
 
-Dans **Storage** > **New Bucket** :
+Dans **Storage** \> **New Bucket** :
+
 - Nom : `tool_logos`, Public : ✅, File size limit : 2MB
 - Nom : `site_assets`, Public : ✅, File size limit : 5MB
 
@@ -145,12 +152,14 @@ npm run dev
 ```
 
 **Ce qui se passe :**
+
 1. Vite compile le code TypeScript
 2. Tailwind génère les styles CSS
 3. Hot Module Replacement (HMR) activé
 4. Navigateur s'ouvre automatiquement
 
 **Vérification :**
+
 - ✅ Page d'accueil affichée
 - ✅ Pas d'erreur dans la console
 - ✅ Connexion Supabase OK (vérifier Network tab)
@@ -161,7 +170,7 @@ npm run dev
 
 **6.1 Via Supabase Dashboard**
 
-1. **Authentication** > **Users** > **Add user**
+1. **Authentication** \> **Users** \> **Add user**
 2. Email : `admin@kitasso.fr`
 3. Password : `votre-mot-de-passe`
 4. Auto Confirm : ✅
@@ -244,6 +253,7 @@ export const toolsApi = {
 ```
 
 **Utilisation dans un composant :**
+
 ```typescript
 import { toolsApi } from '@/api';
 
@@ -289,6 +299,7 @@ function HomePage() {
 ```
 
 **Avantages :**
+
 - Gestion du loading automatique
 - Retry logic intégré
 - Fallback data si erreur réseau
@@ -411,6 +422,7 @@ git push
 ### Logs Supabase
 
 **Activer les logs détaillés :**
+
 ```typescript
 // src/api/client.ts
 import { createClient } from '@supabase/supabase-js';
@@ -435,7 +447,8 @@ export const supabase = createClient(
 ```
 
 **Vérifier les requêtes :**
-- Chrome DevTools > Network > Filter: `supabase`
+
+- Chrome DevTools \> Network \> Filter: `supabase`
 - Voir les queries SQL exécutées
 - Vérifier les codes de statut (200 OK, 401 Unauthorized)
 
@@ -444,13 +457,15 @@ export const supabase = createClient(
 ### React DevTools
 
 **Installation :**
+
 ```bash
 # Extension Chrome/Firefox
 # Rechercher "React Developer Tools"
 ```
 
 **Utilisation :**
-1. Ouvrir DevTools > Components
+
+1. Ouvrir DevTools \> Components
 2. Inspecter la hiérarchie de composants
 3. Voir les props/state en temps réel
 4. Profiler les rendus
@@ -460,6 +475,7 @@ export const supabase = createClient(
 ### Erreurs fréquentes
 
 **Erreur : "Invalid API key"**
+
 ```bash
 # Vérifier .env
 cat .env
@@ -469,12 +485,14 @@ npm run dev
 ```
 
 **Erreur : "Table doesn't exist"**
+
 ```bash
 # Vérifier les migrations Supabase
 # Dashboard > SQL Editor > Vérifier les tables
 ```
 
 **Erreur : "RLS policy violation"**
+
 ```bash
 # Se connecter en tant qu'admin
 # Ou vérifier les policies dans /database/rls
