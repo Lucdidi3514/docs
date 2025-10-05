@@ -1,0 +1,665 @@
+---
+title: 'Composants UI'
+description: 'Bibliothèque de composants React réutilisables et pattern de composition'
+---
+
+## Vue d'ensemble
+
+Kit'Asso suit une architecture de composants basée sur la composition et la réutilisabilité. Les composants sont organisés par niveau d'abstraction et domaine fonctionnel.
+
+**Organisation :**
+```
+src/components/
+├── ui/                 # Composants de base (Button, Input, Card)
+├── forms/              # Formulaires et validation
+├── modals/             # Modals réutilisables
+├── sections/           # Sections de page
+├── toolpacks/          # Composants packs d'outils
+├── workflows/          # Composants workflows
+└── App/                # Composants app-level (Header, Footer)
+```
+
+**Principes :**
+- Single Responsibility: un composant = une responsabilité
+- Composition over Inheritance
+- Props typées avec TypeScript
+- Accessible par défaut (ARIA, keyboard nav)
+
+---
+
+## Composants UI de Base
+
+### Button
+
+**Fichier :** `src/components/ui/Button.tsx`
+
+```typescript
+import { ButtonHTMLAttributes, forwardRef } from 'react';
+import { clsx } from 'clsx';
+
+interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+  variant?: 'primary' | 'secondary' | 'outline' | 'ghost' | 'danger';
+  size?: 'sm' | 'md' | 'lg';
+  fullWidth?: boolean;
+  loading?: boolean;
+}
+
+export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
+  ({ 
+    variant = 'primary', 
+    size = 'md', 
+    fullWidth = false,
+    loading = false,
+    children, 
+    className,
+    disabled,
+    ...props 
+  }, ref) => {
+    const baseStyles = 'inline-flex items-center justify-center font-semibold rounded-lg transition-all focus:outline-none focus:ring-2 focus:ring-offset-2';
+    
+    const variants = {
+      primary: 'bg-gradient-to-r from-indigo-600 to-blue-500 text-white hover:shadow-lg focus:ring-indigo-500',
+      secondary: 'bg-gray-200 text-gray-900 hover:bg-gray-300 focus:ring-gray-400',
+      outline: 'border-2 border-indigo-600 text-indigo-600 hover:bg-indigo-50 focus:ring-indigo-500',
+      ghost: 'text-gray-700 hover:bg-gray-100 focus:ring-gray-300',
+      danger: 'bg-red-600 text-white hover:bg-red-700 focus:ring-red-500'
+    };
+
+    const sizes = {
+      sm: 'px-3 py-1.5 text-sm',
+      md: 'px-4 py-2 text-base',
+      lg: 'px-6 py-3 text-lg'
+    };
+
+    return (
+      <button
+        ref={ref}
+        className={clsx(
+          baseStyles,
+          variants[variant],
+          sizes[size],
+          fullWidth && 'w-full',
+          (disabled || loading) && 'opacity-50 cursor-not-allowed',
+          className
+        )}
+        disabled={disabled || loading}
+        {...props}
+      >
+        {loading && (
+          <svg className="animate-spin -ml-1 mr-2 h-4 w-4" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+          </svg>
+        )}
+        {children}
+      </button>
+    );
+  }
+);
+
+Button.displayName = 'Button';
+```
+
+**Usage :**
+```typescript
+<Button variant="primary" onClick={handleClick}>
+  Enregistrer
+</Button>
+
+<Button variant="outline" size="sm" loading={isLoading}>
+  Charger plus
+</Button>
+```
+
+---
+
+### Card
+
+**Fichier :** `src/components/ui/Card.tsx`
+
+```typescript
+import { HTMLAttributes } from 'react';
+import { clsx } from 'clsx';
+
+interface CardProps extends HTMLAttributes<HTMLDivElement> {
+  hoverable?: boolean;
+  padding?: 'none' | 'sm' | 'md' | 'lg';
+}
+
+export function Card({ 
+  hoverable = false, 
+  padding = 'md', 
+  children, 
+  className,
+  ...props 
+}: CardProps) {
+  const paddings = {
+    none: 'p-0',
+    sm: 'p-3',
+    md: 'p-4',
+    lg: 'p-6'
+  };
+
+  return (
+    <div
+      className={clsx(
+        'bg-white rounded-lg shadow-md',
+        paddings[padding],
+        hoverable && 'hover:shadow-lg transition-shadow cursor-pointer',
+        className
+      )}
+      {...props}
+    >
+      {children}
+    </div>
+  );
+}
+```
+
+---
+
+### Badge
+
+**Fichier :** `src/components/ui/Badge.tsx`
+
+```typescript
+import { clsx } from 'clsx';
+
+interface BadgeProps {
+  children: React.ReactNode;
+  variant?: 'default' | 'success' | 'warning' | 'danger' | 'info';
+  size?: 'sm' | 'md';
+}
+
+export function Badge({ children, variant = 'default', size = 'md' }: BadgeProps) {
+  const variants = {
+    default: 'bg-gray-100 text-gray-800',
+    success: 'bg-green-100 text-green-800',
+    warning: 'bg-orange-100 text-orange-800',
+    danger: 'bg-red-100 text-red-800',
+    info: 'bg-blue-100 text-blue-800'
+  };
+
+  const sizes = {
+    sm: 'text-xs px-2 py-0.5',
+    md: 'text-sm px-2.5 py-1'
+  };
+
+  return (
+    <span className={clsx('inline-flex items-center font-medium rounded-full', variants[variant], sizes[size])}>
+      {children}
+    </span>
+  );
+}
+```
+
+---
+
+## Composants Métier
+
+### ToolCard
+
+**Fichier :** `src/components/ToolCard.tsx`
+
+```typescript
+import { EnhancedTool } from '@/api/types';
+import { ToolLogo } from './ToolLogo';
+import { PricingBadge } from './PricingBadge';
+import { useFavorites } from '@/hooks/useFavorites';
+import { Heart } from 'lucide-react';
+
+interface ToolCardProps {
+  tool: EnhancedTool;
+  onClick?: () => void;
+  showFavorite?: boolean;
+}
+
+export function ToolCard({ tool, onClick, showFavorite = true }: ToolCardProps) {
+  const { isFavorite, toggleFavorite } = useFavorites();
+
+  return (
+    <div 
+      onClick={onClick}
+      className="relative bg-white rounded-lg p-4 shadow-md hover:shadow-lg transition-shadow cursor-pointer"
+    >
+      {/* Bouton favori */}
+      {showFavorite && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            toggleFavorite(tool.id);
+          }}
+          className="absolute top-3 right-3 p-2 rounded-full bg-white shadow-sm hover:shadow-md transition-shadow"
+          aria-label={isFavorite(tool.id) ? 'Retirer des favoris' : 'Ajouter aux favoris'}
+        >
+          <Heart
+            className={`w-5 h-5 ${
+              isFavorite(tool.id) 
+                ? 'fill-red-500 text-red-500' 
+                : 'text-gray-400'
+            }`}
+          />
+        </button>
+      )}
+
+      {/* Logo */}
+      <div className="flex items-center justify-center mb-3">
+        <ToolLogo url={tool.logo_url} name={tool.name} size="lg" />
+      </div>
+
+      {/* Informations */}
+      <h3 className="font-semibold text-lg mb-1 text-center">{tool.name}</h3>
+      <p className="text-sm text-gray-600 mb-3 text-center line-clamp-2">
+        {tool.description}
+      </p>
+
+      {/* Catégorie */}
+      <div className="text-xs text-gray-500 mb-2 text-center">
+        {tool.category_name}
+      </div>
+
+      {/* Pricing Badge */}
+      <div className="flex justify-center">
+        <PricingBadge tier={tool.pricing_tier} />
+      </div>
+
+      {/* Features (optionnel) */}
+      {tool.features && tool.features.length > 0 && (
+        <div className="mt-3 flex flex-wrap gap-1">
+          {tool.features.slice(0, 3).map(feature => (
+            <span key={feature.id} className="text-xs bg-gray-100 px-2 py-1 rounded">
+              {feature.value}
+            </span>
+          ))}
+          {tool.features.length > 3 && (
+            <span className="text-xs text-gray-500">+{tool.features.length - 3}</span>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+```
+
+---
+
+### ToolLogo
+
+**Fichier :** `src/components/ToolLogo.tsx`
+
+```typescript
+import { useState } from 'react';
+import { clsx } from 'clsx';
+
+interface ToolLogoProps {
+  url: string | null;
+  name: string;
+  size?: 'sm' | 'md' | 'lg';
+}
+
+export function ToolLogo({ url, name, size = 'md' }: ToolLogoProps) {
+  const [error, setError] = useState(false);
+
+  const sizes = {
+    sm: 'w-8 h-8 text-sm',
+    md: 'w-12 h-12 text-base',
+    lg: 'w-16 h-16 text-lg'
+  };
+
+  // Fallback : initiales
+  if (!url || error) {
+    return (
+      <div 
+        className={clsx(
+          'rounded-lg bg-gradient-to-br from-indigo-400 to-blue-500 flex items-center justify-center',
+          sizes[size]
+        )}
+      >
+        <span className="text-white font-bold">
+          {name.charAt(0).toUpperCase()}
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <img
+      src={url}
+      alt={`Logo ${name}`}
+      className={clsx('rounded-lg object-cover', sizes[size])}
+      onError={() => setError(true)}
+      loading="lazy"
+    />
+  );
+}
+```
+
+---
+
+### PricingBadge
+
+**Fichier :** `src/components/PricingBadge.tsx`
+
+```typescript
+import { Badge } from './ui/Badge';
+
+interface PricingBadgeProps {
+  tier: 'Gratuit' | 'Freemium' | 'Payant' | 'Entreprise';
+  className?: string;
+}
+
+export function PricingBadge({ tier, className }: PricingBadgeProps) {
+  const variants: Record<string, 'success' | 'warning' | 'danger' | 'default'> = {
+    Gratuit: 'success',
+    Freemium: 'warning',
+    Payant: 'danger',
+    Entreprise: 'default'
+  };
+
+  return (
+    <Badge variant={variants[tier]} className={className}>
+      {tier}
+    </Badge>
+  );
+}
+```
+
+---
+
+## Composants de Formulaire
+
+### FormInput
+
+**Fichier :** `src/components/forms/FormInput.tsx`
+
+```typescript
+import { InputHTMLAttributes, forwardRef } from 'react';
+import { clsx } from 'clsx';
+
+interface FormInputProps extends InputHTMLAttributes<HTMLInputElement> {
+  label?: string;
+  error?: string;
+  helpText?: string;
+}
+
+export const FormInput = forwardRef<HTMLInputElement, FormInputProps>(
+  ({ label, error, helpText, className, ...props }, ref) => {
+    return (
+      <div className="space-y-1">
+        {label && (
+          <label className="block text-sm font-medium text-gray-700">
+            {label}
+            {props.required && <span className="text-red-500 ml-1">*</span>}
+          </label>
+        )}
+
+        <input
+          ref={ref}
+          className={clsx(
+            'w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500',
+            error ? 'border-red-500' : 'border-gray-300',
+            className
+          )}
+          {...props}
+        />
+
+        {error && (
+          <p className="text-sm text-red-600">{error}</p>
+        )}
+
+        {helpText && !error && (
+          <p className="text-sm text-gray-500">{helpText}</p>
+        )}
+      </div>
+    );
+  }
+);
+
+FormInput.displayName = 'FormInput';
+```
+
+**Usage avec React Hook Form :**
+```typescript
+import { useForm } from 'react-hook-form';
+import { FormInput } from '@/components/forms/FormInput';
+
+function MyForm() {
+  const { register, formState: { errors } } = useForm();
+
+  return (
+    <form>
+      <FormInput
+        label="Nom de l'outil"
+        {...register('name', { required: 'Le nom est requis' })}
+        error={errors.name?.message}
+      />
+    </form>
+  );
+}
+```
+
+---
+
+### FormSelect
+
+**Fichier :** `src/components/forms/FormSelect.tsx`
+
+```typescript
+import { SelectHTMLAttributes, forwardRef } from 'react';
+import { clsx } from 'clsx';
+
+interface FormSelectProps extends SelectHTMLAttributes<HTMLSelectElement> {
+  label?: string;
+  error?: string;
+  options: Array<{ value: string; label: string }>;
+}
+
+export const FormSelect = forwardRef<HTMLSelectElement, FormSelectProps>(
+  ({ label, error, options, className, ...props }, ref) => {
+    return (
+      <div className="space-y-1">
+        {label && (
+          <label className="block text-sm font-medium text-gray-700">
+            {label}
+            {props.required && <span className="text-red-500 ml-1">*</span>}
+          </label>
+        )}
+
+        <select
+          ref={ref}
+          className={clsx(
+            'w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500',
+            error ? 'border-red-500' : 'border-gray-300',
+            className
+          )}
+          {...props}
+        >
+          <option value="">Sélectionner...</option>
+          {options.map(option => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+
+        {error && (
+          <p className="text-sm text-red-600">{error}</p>
+        )}
+      </div>
+    );
+  }
+);
+
+FormSelect.displayName = 'FormSelect';
+```
+
+---
+
+## Composants Modal
+
+### Modal
+
+**Fichier :** `src/components/modals/Modal.tsx`
+
+```typescript
+import { ReactNode, useEffect } from 'react';
+import { X } from 'lucide-react';
+import { clsx } from 'clsx';
+
+interface ModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  title: string;
+  children: ReactNode;
+  size?: 'sm' | 'md' | 'lg' | 'xl';
+  footer?: ReactNode;
+}
+
+export function Modal({ isOpen, onClose, title, children, size = 'md', footer }: ModalProps) {
+  // Fermer avec Escape
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+
+    if (isOpen) {
+      document.addEventListener('keydown', handleEscape);
+      document.body.style.overflow = 'hidden';
+    }
+
+    return () => {
+      document.removeEventListener('keydown', handleEscape);
+      document.body.style.overflow = 'unset';
+    };
+  }, [isOpen, onClose]);
+
+  if (!isOpen) return null;
+
+  const sizes = {
+    sm: 'max-w-md',
+    md: 'max-w-2xl',
+    lg: 'max-w-4xl',
+    xl: 'max-w-6xl'
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      {/* Overlay */}
+      <div 
+        className="absolute inset-0 bg-black bg-opacity-50"
+        onClick={onClose}
+      />
+
+      {/* Modal */}
+      <div className={clsx('relative bg-white rounded-lg shadow-xl w-full mx-4', sizes[size])}>
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b">
+          <h2 className="text-xl font-semibold">{title}</h2>
+          <button
+            onClick={onClose}
+            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+            aria-label="Fermer"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Content */}
+        <div className="px-6 py-4 max-h-[70vh] overflow-y-auto">
+          {children}
+        </div>
+
+        {/* Footer */}
+        {footer && (
+          <div className="px-6 py-4 border-t bg-gray-50 rounded-b-lg">
+            {footer}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+```
+
+---
+
+## Bonnes pratiques
+
+### ✅ À faire
+
+**Composition de composants**
+```typescript
+// ✅ Bon : composition
+<Card hoverable>
+  <ToolLogo url={tool.logo_url} name={tool.name} />
+  <PricingBadge tier={tool.pricing_tier} />
+</Card>
+
+// ❌ Mauvais : props explosion
+<Card 
+  logoUrl={tool.logo_url}
+  toolName={tool.name}
+  pricingTier={tool.pricing_tier}
+  showLogo
+  showPricing
+/>
+```
+
+**Props par défaut**
+```typescript
+interface ButtonProps {
+  variant?: 'primary' | 'secondary';
+  size?: 'sm' | 'md' | 'lg';
+}
+
+function Button({ variant = 'primary', size = 'md', ...props }: ButtonProps) {
+  // ...
+}
+```
+
+**ForwardRef pour composants form**
+```typescript
+export const Input = forwardRef<HTMLInputElement, InputProps>((props, ref) => {
+  return <input ref={ref} {...props} />;
+});
+```
+
+---
+
+### ❌ À éviter
+
+**Trop de responsabilités**
+```typescript
+// ❌ Mauvais : fait trop de choses
+function ToolCardWithFavoriteAndCompareAndModal() {
+  // Gestion favorites
+  // Gestion comparaison
+  // Gestion modal
+  // Affichage
+}
+
+// ✅ Bon : séparation
+function ToolCard() {
+  const favorites = useFavorites();
+  return <Card>...</Card>;
+}
+```
+
+---
+
+## Ressources
+
+<CardGroup cols={2}>
+  <Card title="Custom Hooks" icon="hook" href="/development/hooks">
+    Hooks utilisés dans les composants
+  </Card>
+  <Card title="API Layer" icon="code" href="/development/api-layer">
+    Récupération de données pour composants
+  </Card>
+  <Card title="Testing" icon="test-tube" href="/development/testing">
+    Tester les composants
+  </Card>
+  <Card title="Conventions" icon="book" href="/development/conventions">
+    Standards de code
+  </Card>
+</CardGroup>

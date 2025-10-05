@@ -1,0 +1,567 @@
+---
+title: 'Conventions de Code'
+description: 'Standards de développement, naming, structure et bonnes pratiques pour Kit\'Asso'
+---
+
+## Vue d'ensemble
+
+Ce guide définit les conventions de code pour maintenir une base de code cohérente, lisible et maintenable dans Kit'Asso.
+
+**Principes fondamentaux :**
+- Clarté avant concision
+- Cohérence avant performance (sauf cas critique)
+- Type safety stricte avec TypeScript
+- Accessibilité par défaut
+- Documentation via le code (self-documenting)
+
+---
+
+## Naming Conventions
+
+### Fichiers et Dossiers
+
+**Composants React :** PascalCase
+```
+ToolCard.tsx
+WorkflowModal.tsx
+AppHeader.tsx
+```
+
+**Hooks :** camelCase avec préfixe `use`
+```
+useAppData.ts
+useFavorites.ts
+useToolFilters.ts
+```
+
+**Utilitaires :** camelCase
+```
+colors.ts
+sanitization.ts
+icons.ts
+```
+
+**API modules :** camelCase
+```
+tools.ts
+workflows.ts
+auth.ts
+```
+
+**Dossiers :** kebab-case
+```
+tool-packs/
+quiz-diagnostic/
+workflow-steps/
+```
+
+---
+
+### Variables et Fonctions
+
+**Variables :** camelCase
+```typescript
+const toolCount = 10;
+const selectedCategory = 'communication';
+const isLoading = false;
+```
+
+**Constantes :** UPPER_SNAKE_CASE
+```typescript
+const API_BASE_URL = 'https://api.example.com';
+const MAX_RETRIES = 3;
+const FAVORITES_KEY = 'kitasso_favorites';
+```
+
+**Fonctions :** camelCase, verbe + nom
+```typescript
+function loadTools() { }
+function handleToolClick() { }
+function validateToolForm() { }
+```
+
+**Event handlers :** `handle` + Event + Subject
+```typescript
+const handleSubmitForm = () => { };
+const handleClickTool = () => { };
+const handleChangeCategory = () => { };
+```
+
+**Booleans :** préfixe `is`, `has`, `should`, `can`
+```typescript
+const isActive = true;
+const hasPermission = false;
+const shouldRetry = true;
+const canEdit = false;
+```
+
+---
+
+### Types et Interfaces
+
+**Interfaces :** PascalCase
+```typescript
+interface Tool {
+  id: string;
+  name: string;
+}
+
+interface ToolCardProps {
+  tool: Tool;
+  onClick?: () => void;
+}
+```
+
+**Types :** PascalCase
+```typescript
+type PricingTier = 'Gratuit' | 'Freemium' | 'Payant' | 'Entreprise';
+type ModalMode = 'create' | 'edit' | 'preview';
+```
+
+**Enums :** PascalCase (clés et valeur)
+```typescript
+enum WorkflowStatus {
+  Active = 'active',
+  Draft = 'draft'
+}
+```
+
+---
+
+## Structure de Fichiers
+
+### Composant React
+
+**Pattern standard :**
+```typescript
+// 1. Imports externes
+import { useState, useEffect } from 'react';
+import { clsx } from 'clsx';
+
+// 2. Imports internes (API, hooks, types)
+import { toolsApi } from '@/api';
+import { useFavorites } from '@/hooks/useFavorites';
+import type { EnhancedTool } from '@/api/types';
+
+// 3. Imports composants locaux
+import { ToolLogo } from './ToolLogo';
+import { PricingBadge } from './PricingBadge';
+
+// 4. Types/Interfaces
+interface ToolCardProps {
+  tool: EnhancedTool;
+  onClick?: () => void;
+}
+
+// 5. Composant
+export function ToolCard({ tool, onClick }: ToolCardProps) {
+  // 5a. Hooks
+  const { isFavorite, toggleFavorite } = useFavorites();
+  const [loading, setLoading] = useState(false);
+
+  // 5b. Handlers
+  const handleClick = () => {
+    onClick?.();
+  };
+
+  // 5c. Effects
+  useEffect(() => {
+    // Logic
+  }, [tool.id]);
+
+  // 5d. Render
+  return (
+    <div onClick={handleClick}>
+      {/* JSX */}
+    </div>
+  );
+}
+```
+
+---
+
+### Module API
+
+**Pattern standard :**
+```typescript
+// 1. Imports
+import { supabase } from './client';
+import { handleSupabaseError } from './base';
+import type { Tool, ToolInsert } from './types';
+
+// 2. Export objet API
+export const toolsApi = {
+  /**
+   * Liste tous les outils
+   */
+  async list(): Promise<Tool[]> {
+    const { data, error } = await supabase
+      .from('tools')
+      .select('*');
+
+    if (error) throw handleSupabaseError(error);
+
+    return data;
+  }
+};
+```
+
+---
+
+## TypeScript
+
+### Type Annotations
+
+**Toujours typer les paramètres de fonction**
+```typescript
+// ✅ Bon
+function calculateTotal(price: number, quantity: number): number {
+  return price * quantity;
+}
+
+// ❌ Mauvais
+function calculateTotal(price, quantity) {
+  return price * quantity;
+}
+```
+
+**Typer les retours de fonction async**
+```typescript
+// ✅ Bon
+async function loadTools(): Promise<Tool[]> {
+  return await toolsApi.list();
+}
+
+// ❌ Mauvais
+async function loadTools() {
+  return await toolsApi.list();
+}
+```
+
+**Éviter `any`, utiliser `unknown` si nécessaire**
+```typescript
+// ✅ Bon
+function processData(data: unknown) {
+  if (typeof data === 'string') {
+    return data.toUpperCase();
+  }
+}
+
+// ❌ Mauvais
+function processData(data: any) {
+  return data.toUpperCase();
+}
+```
+
+---
+
+### Interfaces vs Types
+
+**Interface pour objets et classes**
+```typescript
+interface User {
+  id: string;
+  name: string;
+  email: string;
+}
+```
+
+**Type pour unions et intersections**
+```typescript
+type Status = 'active' | 'draft' | 'archived';
+type ToolWithCategory = Tool & { category_name: string };
+```
+
+---
+
+## React Patterns
+
+### Props Destructuring
+
+**Destructurer dans la signature**
+```typescript
+// ✅ Bon
+export function ToolCard({ tool, onClick }: ToolCardProps) {
+  return <div>{tool.name}</div>;
+}
+
+// ❌ Mauvais
+export function ToolCard(props: ToolCardProps) {
+  return <div>{props.tool.name}</div>;
+}
+```
+
+---
+
+### Conditional Rendering
+
+**Utiliser `&&` pour conditions simples**
+```typescript
+{isLoading && <LoadingSpinner />}
+{error && <ErrorMessage message={error} />}
+```
+
+**Utiliser ternaire pour if/else**
+```typescript
+{user ? <Dashboard /> : <Login />}
+```
+
+**Éviter les ternaires imbriqués**
+```typescript
+// ❌ Mauvais
+{status === 'loading' ? <Spinner /> : status === 'error' ? <Error /> : <Content />}
+
+// ✅ Bon
+{status === 'loading' && <Spinner />}
+{status === 'error' && <Error />}
+{status === 'success' && <Content />}
+```
+
+---
+
+### State Management
+
+**Nommer les setters de façon cohérente**
+```typescript
+const [tools, setTools] = useState<Tool[]>([]);
+const [loading, setLoading] = useState(false);
+const [searchQuery, setSearchQuery] = useState('');
+```
+
+**Utiliser functional updates pour state basé sur état précédent**
+```typescript
+// ✅ Bon
+setCount(prev => prev + 1);
+setItems(prev => [...prev, newItem]);
+
+// ❌ Mauvais
+setCount(count + 1);
+```
+
+---
+
+## CSS et Styling
+
+### Tailwind Classes
+
+**Ordre des classes Tailwind**
+```typescript
+// 1. Layout (flex, grid)
+// 2. Spacing (p, m)
+// 3. Sizing (w, h)
+// 4. Typography (text, font)
+// 5. Visual (bg, border, shadow)
+// 6. Interactive (hover, focus)
+
+<div className="flex items-center gap-4 p-4 w-full text-lg font-semibold bg-white rounded-lg shadow-md hover:shadow-lg">
+```
+
+**Utiliser clsx pour classes conditionnelles**
+```typescript
+import { clsx } from 'clsx';
+
+<button className={clsx(
+  'px-4 py-2 rounded-lg',
+  isActive ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-700',
+  disabled && 'opacity-50 cursor-not-allowed'
+)}>
+```
+
+---
+
+## Git Workflow
+
+### Commit Messages
+
+**Format :** `type(scope): description`
+
+**Types :**
+- `feat`: Nouvelle fonctionnalité
+- `fix`: Correction de bug
+- `docs`: Documentation
+- `style`: Formatage (ne change pas le code)
+- `refactor`: Refactoring
+- `test`: Ajout/modification de tests
+- `chore`: Tâches de maintenance
+
+**Exemples :**
+```bash
+feat(tools): add comparison mode
+fix(workflows): correct step navigation bug
+docs(readme): update installation instructions
+refactor(api): extract error handling to base
+test(hooks): add tests for useFavorites
+chore(deps): update dependencies
+```
+
+---
+
+### Branch Naming
+
+**Format :** `type/short-description`
+
+```bash
+feature/tool-comparison
+fix/modal-close-bug
+refactor/api-layer
+docs/architecture-guide
+```
+
+---
+
+## Comments et Documentation
+
+### TSDoc pour fonctions publiques
+
+```typescript
+/**
+ * Récupère tous les outils filtrés par critères
+ * 
+ * @param filters - Critères de filtrage optionnels
+ * @returns Liste d'outils enrichis avec catégorie et features
+ * @throws {ApiError} Si la requête échoue
+ * 
+ * @example
+ * ```typescript
+ * const tools = await toolsApi.list({ category_id: 'cat-123' });
+ * ```
+ */
+async function list(filters?: ToolFilters): Promise<EnhancedTool[]> {
+  // Implementation
+}
+```
+
+---
+
+### Inline Comments
+
+**Commenter le "pourquoi", pas le "quoi"**
+```typescript
+// ✅ Bon
+// Debounce pour éviter trop de requêtes pendant la saisie
+const debouncedSearch = debounce(searchQuery, 300);
+
+// ❌ Mauvais
+// Créer une variable debouncedSearch
+const debouncedSearch = debounce(searchQuery, 300);
+```
+
+**Éviter les commentaires évidents**
+```typescript
+// ❌ Mauvais
+// Incrémenter le compteur
+count++;
+
+// ✅ Bon (pas de commentaire nécessaire)
+count++;
+```
+
+---
+
+## Error Handling
+
+### Try/Catch Pattern
+
+```typescript
+async function loadTools() {
+  try {
+    setLoading(true);
+    const data = await toolsApi.list();
+    setTools(data);
+    setError(null);
+  } catch (err) {
+    const message = err instanceof ApiError 
+      ? err.message 
+      : 'Erreur inattendue';
+    setError(message);
+    console.error('Failed to load tools:', err);
+  } finally {
+    setLoading(false);
+  }
+}
+```
+
+---
+
+## Accessibility
+
+### ARIA Labels
+
+```typescript
+<button 
+  onClick={handleDelete}
+  aria-label="Supprimer l'outil"
+>
+  <Trash2 className="w-4 h-4" />
+</button>
+
+<input 
+  type="search"
+  aria-label="Rechercher un outil"
+  placeholder="Rechercher..."
+/>
+```
+
+### Keyboard Navigation
+
+```typescript
+const handleKeyDown = (e: React.KeyboardEvent) => {
+  if (e.key === 'Enter' || e.key === ' ') {
+    handleClick();
+  }
+  if (e.key === 'Escape') {
+    handleClose();
+  }
+};
+
+<div 
+  role="button"
+  tabIndex={0}
+  onKeyDown={handleKeyDown}
+  onClick={handleClick}
+>
+```
+
+---
+
+## Performance
+
+### Memoization
+
+```typescript
+// useMemo pour calculs coûteux
+const filteredTools = useMemo(() => {
+  return tools.filter(tool => 
+    tool.name.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+}, [tools, searchQuery]);
+
+// useCallback pour fonctions passées en props
+const handleClick = useCallback((toolId: string) => {
+  console.log('Clicked:', toolId);
+}, []);
+
+// React.memo pour composants purs
+export const ToolCard = React.memo(({ tool }: ToolCardProps) => {
+  return <div>{tool.name}</div>;
+});
+```
+
+---
+
+## Ressources
+
+<CardGroup cols={2}>
+  <Card title="Getting Started" icon="rocket" href="/development/getting-started">
+    Setup environnement de développement
+  </Card>
+  <Card title="API Layer" icon="code" href="/development/api-layer">
+    Patterns d'utilisation de l'API
+  </Card>
+  <Card title="Testing" icon="test-tube" href="/development/testing">
+    Standards de tests
+  </Card>
+  <Card title="Components" icon="box" href="/development/components">
+    Patterns de composants
+  </Card>
+</CardGroup>

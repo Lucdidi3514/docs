@@ -1,0 +1,334 @@
+---
+title: 'Custom Hooks'
+description: 'Hooks React réutilisables pour logique métier et gestion d\'état'
+---
+
+## Vue d'ensemble
+
+Kit'Asso utilise des custom hooks pour encapsuler la logique métier complexe et la rendre réutilisable à travers l'application. Ces hooks gèrent le fetching de données, l'état local, les side effects et les interactions utilisateur.
+
+**Hooks disponibles :**
+- `useAppData` - Chargement global des données
+- `useFavorites` - Gestion des favoris
+- `useToolFilters` - Recherche et filtrage
+- `useToolComparison` - Mode comparaison
+- `useAppModals` - State management des modals
+- `useNetworkUtils` - Utilitaires réseau
+- `useWorkflowProgress` - Progression dans workflows
+
+**Localisation :** `src/hooks/`
+
+---
+
+## useAppData
+
+### Description
+
+Hook principal qui charge toutes les données de l'application au démarrage avec retry logic et fallback.
+
+**Fichier :** `src/hooks/useAppData.ts`
+
+```typescript
+import { useState, useEffect } from 'react';
+import { toolsApi, workflowsApi, packsApi, categoriesApi } from '@/api';
+import { fetchWithCache } from '@/lib/api';
+import { useNetworkUtils } from './useNetworkUtils';
+
+interface AppData {
+  tools: EnhancedTool[];
+  workflows: Workflow[];
+  packs: ToolPack[];
+  categories: Category[];
+  loading: boolean;
+  error: string | null;
+  refetch: () => Promise<void>;
+}
+
+export function useAppData(): AppData {
+  const [tools, setTools] = useState<EnhancedTool[]>([]);
+  const [workflows, setWorkflows] = useState<Workflow[]>([]);
+  const [packs, setPacks] = useState<ToolPack[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const { isOnline, retryConnection } = useNetworkUtils();
+
+  const loadData = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      // Charger en parallèle avec cache
+      const [toolsData, workflowsData, packsData, categoriesData] = await Promise.all([
+        fetchWithCache('tools', () => toolsApi.list()),
+        fetchWithCache('workflows', () => workflowsApi.list()),
+        fetchWithCache('packs', () => packsApi.list()),
+        fetchWithCache('categories', () => categoriesApi.list())
+      ]);
+
+      setTools(toolsData);
+      setWorkflows(workflowsData);
+      setPacks(packsData);
+      setCategories(categoriesData);
+    } catch (err) {
+      console.error('Failed to load app data:', err);
+      
+      if (isOnline) {
+        const retrySuccess = await retryConnection(loadData);
+        if (!retrySuccess) {
+          setError('Impossible de charger les données. Veuillez rafraîchir la page.');
+          loadFallbackData();
+        }
+      } else {
+        setError('Pas de connexion internet');
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadFallbackData = () => {
+    const cachedTools = localStorage.getItem('fallback_tools');
+    if (cachedTools) {
+      setTools(JSON.parse(cachedTools));
+    }
+  };
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  return {
+    tools,
+    workflows,
+    packs,
+    categories,
+    loading,
+    error,
+    refetch: loadData
+  };
+}
+```
+
+### Utilisation
+
+```typescript
+function HomePage() {
+  const { tools, workflows, loading, error, refetch } = useAppData();
+
+  if (loading) return <LoadingSpinner />;
+  if (error) return <ErrorMessage message={error} onRetry={refetch} />;
+
+  return (
+    <div>
+      <ToolsSection tools={tools} />
+      <WorkflowsSection workflows={workflows} />
+    </div>
+  );
+}
+```
+
+---
+
+## useFavorites
+
+### Description
+
+Gestion des outils favoris avec persistence localStorage.
+
+**Fichier :** `src/hooks/useFavorites.ts`
+
+```typescript
+import { useState, useEffect } from 'react';
+
+const FAVORITES_KEY = 'kitasso_favorites';
+
+interface UseFavoritesReturn {
+  favorites: string[];
+  isFavorite: (toolId: string) => boolean;
+  toggleFavorite: (toolId: string) => void;
+  addFavorite: (toolId: string) => void;
+  removeFavorite: (toolId: string) => void;
+  clearFavorites: () => void;
+  count: number;
+}
+
+export function useFavorites(): UseFavoritesReturn {
+  const [favorites, setFavorites] = useState<string[]>(() => {
+    const stored = localStorage.getItem(FAVORITES_KEY);
+    return stored ? JSON.parse(stored) : [];
+  });
+
+  useEffect(() => {
+    localStorage.setItem(FAVORITES_KEY, JSON.stringify(favorites));
+  }, [favorites]);
+
+  const isFavorite = (toolId: string): boolean => {
+    return favorites.includes(toolId);
+  };
+
+  const addFavorite = (toolId: string) => {
+    if (!favorites.includes(toolId)) {
+      setFavorites(prev => [...prev, toolId]);
+    }
+  };
+
+  const removeFavorite = (toolId: string) => {
+    setFavorites(prev => prev.filter(id => id !== toolId));
+  };
+
+  const toggleFavorite = (toolId: string) => {
+    if (isFavorite(toolId)) {
+      removeFavorite(toolId);
+    } else {
+      addFavorite(toolId);
+    }
+  };
+
+  const clearFavorites = () => {
+    setFavorites([]);
+  };
+
+  return {
+    favorites,
+    isFavorite,
+    toggleFavorite,
+    addFavorite,
+    removeFavorite,
+    clearFavorites,
+    count: favorites.length
+  };
+}
+```
+
+### Utilisation
+
+```typescript
+function ToolCard({ tool }: { tool: Tool }) {
+  const { isFavorite, toggleFavorite } = useFavorites();
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => toggleFavorite(tool.id)}
+        className="absolute top-2 right-2 p-2 rounded-full bg-white shadow"
+      >
+        <Heart
+          className={`w-5 h-5 ${isFavorite(tool.id) ? 'fill-red-500 text-red-500' : 'text-gray-400'}`}
+        />
+      </button>
+    </div>
+  );
+}
+```
+
+---
+
+## useToolFilters
+
+### Description
+
+Gestion de la recherche et du filtrage d'outils avec debouncing.
+
+**Fichier :** `src/hooks/useToolFilters.ts`
+
+```typescript
+import { useState, useEffect, useMemo } from 'react';
+import { EnhancedTool } from '@/api/types';
+
+interface UseToolFiltersProps {
+  tools: EnhancedTool[];
+}
+
+interface UseToolFiltersReturn {
+  filteredTools: EnhancedTool[];
+  searchQuery: string;
+  setSearchQuery: (query: string) => void;
+  selectedCategory: string | null;
+  setSelectedCategory: (categoryId: string | null) => void;
+  selectedPricingTier: string | null;
+  setSelectedPricingTier: (tier: string | null) => void;
+  viewMode: 'grid' | 'list';
+  setViewMode: (mode: 'grid' | 'list') => void;
+  resetFilters: () => void;
+  activeFiltersCount: number;
+}
+
+export function useToolFilters({ tools }: UseToolFiltersProps): UseToolFiltersReturn {
+  const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [selectedPricingTier, setSelectedPricingTier] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  const filteredTools = useMemo(() => {
+    return tools.filter(tool => {
+      const matchesSearch = debouncedSearch === '' ||
+        tool.name.toLowerCase().includes(debouncedSearch.toLowerCase()) ||
+        tool.description.toLowerCase().includes(debouncedSearch.toLowerCase());
+
+      const matchesCategory = selectedCategory === null ||
+        tool.category_id === selectedCategory;
+
+      const matchesPricing = selectedPricingTier === null ||
+        tool.pricing_tier === selectedPricingTier;
+
+      return matchesSearch && matchesCategory && matchesPricing;
+    });
+  }, [tools, debouncedSearch, selectedCategory, selectedPricingTier]);
+
+  const resetFilters = () => {
+    setSearchQuery('');
+    setSelectedCategory(null);
+    setSelectedPricingTier(null);
+  };
+
+  const activeFiltersCount = [
+    debouncedSearch !== '',
+    selectedCategory !== null,
+    selectedPricingTier !== null
+  ].filter(Boolean).length;
+
+  return {
+    filteredTools,
+    searchQuery,
+    setSearchQuery,
+    selectedCategory,
+    setSelectedCategory,
+    selectedPricingTier,
+    setSelectedPricingTier,
+    viewMode,
+    setViewMode,
+    resetFilters,
+    activeFiltersCount
+  };
+}
+```
+
+---
+
+## Ressources
+
+<CardGroup cols={2}>
+  <Card title="API Layer" icon="code" href="/development/api-layer">
+    API utilisée par les hooks
+  </Card>
+  <Card title="Components" icon="box" href="/development/components">
+    Composants utilisant ces hooks
+  </Card>
+  <Card title="Testing" icon="test-tube" href="/development/testing">
+    Comment tester les hooks
+  </Card>
+  <Card title="Getting Started" icon="rocket" href="/development/getting-started">
+    Setup environnement de dev
+  </Card>
+</CardGroup>

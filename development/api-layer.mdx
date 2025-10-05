@@ -1,0 +1,892 @@
+---
+title: 'API Layer'
+description: 'Utilisation de la couche d\'abstraction Supabase centralisée'
+---
+
+## Vue d'ensemble
+
+L'API Layer est une couche d'abstraction TypeScript qui centralise toutes les interactions avec Supabase. Elle fournit des fonctions type-safe, une gestion d'erreurs cohérente et un retry logic automatique.
+
+**Principe fondamental :**
+> Aucune requête Supabase directe dans les composants. Tout passe par `/api`.
+
+**Avantages :**
+- Type safety avec TypeScript strict
+- Gestion d'erreurs centralisée
+- Retry logic pour résilience réseau
+- Cache en mémoire pour performance
+- Tests unitaires simplifiés
+- Refactoring facile (changement de backend transparent)
+
+**Structure :**
+```
+src/api/
+├── client.ts          # Singleton Supabase
+├── base.ts            # Error handling + utilities
+├── types.ts           # Types API
+├── auth.ts            # Authentication
+├── tools.ts           # Tools CRUD
+├── categories.ts      # Categories CRUD
+├── filters.ts         # Filters CRUD
+├── workflows.ts       # Workflows CRUD
+├── packs.ts           # Tool Packs CRUD
+├── quiz.ts            # Quiz operations
+├── index.ts           # Barrel exports
+└── __tests__/         # Tests unitaires
+```
+
+---
+
+## Client Supabase
+
+### Configuration
+
+**Fichier :** `src/api/client.ts`
+
+```typescript
+import { createClient } from '@supabase/supabase-js';
+import type { Database } from '@/types/database';
+
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+if (!supabaseUrl || !supabaseAnonKey) {
+  throw new Error('Missing Supabase environment variables');
+}
+
+export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: true
+  }
+});
+```
+
+**Singleton :** Une seule instance réutilisée partout.
+
+---
+
+## Error Handling
+
+### ApiError Class
+
+**Fichier :** `src/api/base.ts`
+
+```typescript
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    public code?: string,
+    public details?: unknown
+  ) {
+    super(message);
+    this.name = 'ApiError';
+  }
+}
+
+export function handleSupabaseError(error: any): ApiError {
+  if (error.code === 'PGRST116') {
+    return new ApiError('Enregistrement introuvable', '404', error);
+  }
+
+  if (error.code === '23505') {
+    return new ApiError('Cet élément existe déjà', 'DUPLICATE', error);
+  }
+
+  if (error.code === '23503') {
+    return new ApiError('Référence invalide', 'FOREIGN_KEY', error);
+  }
+
+  if (error.message?.includes('JWT')) {
+    return new ApiError('Session expirée, reconnectez-vous', 'AUTH', error);
+  }
+
+  return new ApiError(
+    error.message || 'Erreur inconnue',
+    error.code,
+    error
+  );
+}
+```
+
+**Usage :**
+```typescript
+try {
+  const data = await toolsApi.list();
+} catch (error) {
+  if (error instanceof ApiError) {
+    console.log(error.message); // Message user-friendly
+    console.log(error.code);    // Code erreur
+  }
+}
+```
+
+---
+
+## Tools API
+
+### Interface complète
+
+**Fichier :** `src/api/tools.ts`
+
+```typescript
+import { supabase } from './client';
+import { handleSupabaseError } from './base';
+import type { EnhancedTool, ToolInsert, ToolUpdate, ToolFilters } from './types';
+
+export const toolsApi = {
+  /**
+   * Liste tous les outils avec catégorie et features
+   */
+  async list(filters?: ToolFilters): Promise<EnhancedTool[]> {
+    let query = supabase
+      .from('tools')
+      .select(`
+        *,
+        category:categories(name),
+        features:tool_features(filter:filters(*))
+      `);
+
+    // Appliquer filtres optionnels
+    if (filters?.category_id) {
+      query = query.eq('category_id', filters.category_id);
+    }
+
+    if (filters?.pricing_tier) {
+      query = query.eq('pricing_tier', filters.pricing_tier);
+    }
+
+    if (filters?.search) {
+      query = query.ilike('name', `%${filters.search}%`);
+    }
+
+    const { data, error } = await query;
+
+    if (error) throw handleSupabaseError(error);
+
+    // Transformer en EnhancedTool
+    return data.map(tool => ({
+      ...tool,
+      category_name: tool.category?.name || 'Non catégorisé',
+      features: tool.features?.map(tf => tf.filter) || []
+    }));
+  },
+
+  /**
+   * Récupérer un outil par ID
+   */
+  async getById(id: string): Promise<EnhancedTool> {
+    const { data, error } = await supabase
+      .from('tools')
+      .select(`
+        *,
+        category:categories(name),
+        features:tool_features(filter:filters(*))
+      `)
+      .eq('id', id)
+      .single();
+
+    if (error) throw handleSupabaseError(error);
+
+    return {
+      ...data,
+      category_name: data.category?.name || 'Non catégorisé',
+      features: data.features?.map(tf => tf.filter) || []
+    };
+  },
+
+  /**
+   * Créer un nouvel outil
+   */
+  async create(tool: ToolInsert): Promise<Tool> {
+    const { data, error } = await supabase
+      .from('tools')
+      .insert(tool)
+      .select()
+      .single();
+
+    if (error) throw handleSupabaseError(error);
+
+    // Associer features si fournies
+    if (tool.feature_ids && tool.feature_ids.length > 0) {
+      await this.updateFeatures(data.id, tool.feature_ids);
+    }
+
+    return data;
+  },
+
+  /**
+   * Mettre à jour un outil
+   */
+  async update(id: string, updates: ToolUpdate): Promise<Tool> {
+    const { feature_ids, ...toolUpdates } = updates;
+
+    const { data, error } = await supabase
+      .from('tools')
+      .update(toolUpdates)
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) throw handleSupabaseError(error);
+
+    // Mettre à jour features si fourni
+    if (feature_ids !== undefined) {
+      await this.updateFeatures(id, feature_ids);
+    }
+
+    return data;
+  },
+
+  /**
+   * Supprimer un outil
+   */
+  async delete(id: string): Promise<void> {
+    const { error } = await supabase
+      .from('tools')
+      .delete()
+      .eq('id', id);
+
+    if (error) throw handleSupabaseError(error);
+  },
+
+  /**
+   * Mettre à jour les features d'un outil
+   */
+  async updateFeatures(toolId: string, featureIds: string[]): Promise<void> {
+    // 1. Supprimer les features existantes
+    await supabase
+      .from('tool_features')
+      .delete()
+      .eq('tool_id', toolId);
+
+    // 2. Ajouter les nouvelles features
+    if (featureIds.length > 0) {
+      const inserts = featureIds.map(filterId => ({
+        tool_id: toolId,
+        filter_id: filterId
+      }));
+
+      const { error } = await supabase
+        .from('tool_features')
+        .insert(inserts);
+
+      if (error) throw handleSupabaseError(error);
+    }
+  }
+};
+```
+
+---
+
+## Workflows API
+
+**Fichier :** `src/api/workflows.ts`
+
+```typescript
+export const workflowsApi = {
+  /**
+   * Liste les workflows (actifs uniquement pour public)
+   */
+  async list(includeInactive = false): Promise<Workflow[]> {
+    let query = supabase
+      .from('workflows')
+      .select('*')
+      .order('display_order', { ascending: true });
+
+    if (!includeInactive) {
+      query = query.eq('status', 'active');
+    }
+
+    const { data, error } = await query;
+
+    if (error) throw handleSupabaseError(error);
+
+    return data;
+  },
+
+  /**
+   * Récupérer un workflow avec ses steps
+   */
+  async getById(id: string): Promise<WorkflowWithSteps> {
+    const { data: workflow, error: workflowError } = await supabase
+      .from('workflows')
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    if (workflowError) throw handleSupabaseError(workflowError);
+
+    const { data: steps, error: stepsError } = await supabase
+      .from('workflow_steps')
+      .select('*')
+      .eq('workflow_id', id)
+      .order('step_number', { ascending: true });
+
+    if (stepsError) throw handleSupabaseError(stepsError);
+
+    return { ...workflow, steps };
+  },
+
+  /**
+   * Créer un workflow
+   */
+  async create(workflow: WorkflowInsert): Promise<Workflow> {
+    const { data, error } = await supabase
+      .from('workflows')
+      .insert(workflow)
+      .select()
+      .single();
+
+    if (error) throw handleSupabaseError(error);
+
+    return data;
+  },
+
+  /**
+   * Mettre à jour un workflow
+   */
+  async update(id: string, updates: WorkflowUpdate): Promise<Workflow> {
+    const { data, error } = await supabase
+      .from('workflows')
+      .update({ ...updates, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) throw handleSupabaseError(error);
+
+    return data;
+  },
+
+  /**
+   * Changer le statut (active <-> draft)
+   */
+  async toggleStatus(id: string): Promise<Workflow> {
+    const workflow = await this.getById(id);
+    const newStatus = workflow.status === 'active' ? 'draft' : 'active';
+
+    return this.update(id, { status: newStatus });
+  }
+};
+```
+
+---
+
+## Packs API
+
+**Fichier :** `src/api/packs.ts`
+
+```typescript
+export const packsApi = {
+  /**
+   * Liste les packs avec nombre d'outils
+   */
+  async list(includeInactive = false): Promise<ToolPack[]> {
+    let query = supabase
+      .from('tool_packs')
+      .select(`
+        *,
+        tools:pack_tools(count)
+      `)
+      .order('display_order', { ascending: true });
+
+    if (!includeInactive) {
+      query = query.eq('status', 'active');
+    }
+
+    const { data, error } = await query;
+
+    if (error) throw handleSupabaseError(error);
+
+    return data.map(pack => ({
+      ...pack,
+      tool_count: pack.tools[0].count
+    }));
+  },
+
+  /**
+   * Récupérer un pack avec ses outils
+   */
+  async getById(id: string): Promise<PackWithTools> {
+    const { data: pack, error: packError } = await supabase
+      .from('tool_packs')
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    if (packError) throw handleSupabaseError(packError);
+
+    const { data: packTools, error: toolsError } = await supabase
+      .from('pack_tools')
+      .select(`
+        display_order,
+        tool:tools(*)
+      `)
+      .eq('pack_id', id)
+      .order('display_order', { ascending: true });
+
+    if (toolsError) throw handleSupabaseError(toolsError);
+
+    return {
+      ...pack,
+      tools: packTools.map(pt => pt.tool)
+    };
+  },
+
+  /**
+   * Mettre à jour les outils d'un pack
+   */
+  async updateTools(packId: string, toolIds: string[]): Promise<void> {
+    // 1. Supprimer associations existantes
+    await supabase
+      .from('pack_tools')
+      .delete()
+      .eq('pack_id', packId);
+
+    // 2. Créer nouvelles associations avec order
+    if (toolIds.length > 0) {
+      const inserts = toolIds.map((toolId, index) => ({
+        pack_id: packId,
+        tool_id: toolId,
+        display_order: index
+      }));
+
+      const { error } = await supabase
+        .from('pack_tools')
+        .insert(inserts);
+
+      if (error) throw handleSupabaseError(error);
+    }
+  }
+};
+```
+
+---
+
+## Quiz API
+
+**Fichier :** `src/api/quiz.ts`
+
+```typescript
+export const quizApi = {
+  /**
+   * Récupérer un quiz par slug
+   */
+  async getBySlug(slug: string): Promise<QuizWithQuestions> {
+    const { data: quiz, error: quizError } = await supabase
+      .from('quizzes')
+      .select('*')
+      .eq('slug', slug)
+      .eq('is_active', true)
+      .single();
+
+    if (quizError) throw handleSupabaseError(quizError);
+
+    const { data: questions, error: questionsError } = await supabase
+      .from('quiz_questions')
+      .select(`
+        *,
+        answers:quiz_answers(*)
+      `)
+      .eq('quiz_id', quiz.id)
+      .order('order_index', { ascending: true });
+
+    if (questionsError) throw handleSupabaseError(questionsError);
+
+    return { ...quiz, questions };
+  },
+
+  /**
+   * Soumettre une réponse de quiz
+   */
+  async submitResponse(submission: QuizSubmission): Promise<QuizResponse> {
+    // 1. Calculer les recommandations
+    const recommendations = await this.getRecommendations(
+      submission.quizId,
+      submission.answers
+    );
+
+    // 2. Insérer la réponse
+    const { data, error } = await supabase
+      .from('quiz_responses')
+      .insert({
+        quiz_id: submission.quizId,
+        answers: submission.answers,
+        recommended_pack_ids: recommendations.pack_ids,
+        recommended_tool_ids: recommendations.tool_ids,
+        email: submission.email
+      })
+      .select()
+      .single();
+
+    if (error) throw handleSupabaseError(error);
+
+    return data;
+  },
+
+  /**
+   * Calculer les recommandations basées sur les réponses
+   */
+  async getRecommendations(
+    quizId: string,
+    answers: Record<string, any>
+  ): Promise<{ pack_ids: string[]; tool_ids: string[] }> {
+    const { data: rules, error } = await supabase
+      .from('quiz_recommendations')
+      .select('*')
+      .eq('quiz_id', quizId)
+      .order('priority', { ascending: false });
+
+    if (error) throw handleSupabaseError(error);
+
+    // Évaluer chaque règle
+    const matchedRules = rules.filter(rule =>
+      evaluateConditionLogic(rule.condition_logic, answers)
+    );
+
+    // Combiner les recommandations
+    const packIds = [...new Set(matchedRules.flatMap(r => r.recommended_pack_ids))];
+    const toolIds = [...new Set(matchedRules.flatMap(r => r.recommended_tool_ids))];
+
+    return { pack_ids: packIds, tool_ids: toolIds };
+  }
+};
+
+// Helper pour évaluer la logique conditionnelle
+function evaluateConditionLogic(logic: ConditionLogic, answers: Record<string, any>): boolean {
+  if (logic.operator === 'AND') {
+    return logic.conditions.every(cond => evaluateCondition(cond, answers));
+  }
+  if (logic.operator === 'OR') {
+    return logic.conditions.some(cond => evaluateCondition(cond, answers));
+  }
+  return false;
+}
+
+function evaluateCondition(condition: Condition, answers: Record<string, any>): boolean {
+  const answer = answers[condition.question_id];
+  
+  switch (condition.operator) {
+    case 'equals':
+      return answer === condition.value;
+    case 'contains':
+      return Array.isArray(answer) && answer.includes(condition.value);
+    case 'greater_than':
+      return Number(answer) > Number(condition.value);
+    case 'less_than':
+      return Number(answer) < Number(condition.value);
+    default:
+      return false;
+  }
+}
+```
+
+---
+
+## Authentication API
+
+**Fichier :** `src/api/auth.ts`
+
+```typescript
+import { supabase } from './client';
+import { handleSupabaseError } from './base';
+
+export const authApi = {
+  /**
+   * Connexion avec email/password
+   */
+  async signIn(email: string, password: string) {
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password
+    });
+
+    if (error) throw handleSupabaseError(error);
+
+    return data;
+  },
+
+  /**
+   * Déconnexion
+   */
+  async signOut() {
+    const { error } = await supabase.auth.signOut();
+
+    if (error) throw handleSupabaseError(error);
+  },
+
+  /**
+   * Récupérer l'utilisateur courant
+   */
+  async getCurrentUser() {
+    const { data: { user }, error } = await supabase.auth.getUser();
+
+    if (error) throw handleSupabaseError(error);
+
+    return user;
+  },
+
+  /**
+   * Vérifier si l'utilisateur est authentifié
+   */
+  async isAuthenticated(): Promise<boolean> {
+    const { data: { session } } = await supabase.auth.getSession();
+    return !!session;
+  }
+};
+```
+
+---
+
+## Utilisation dans les composants
+
+### Pattern recommandé
+
+**❌ Mauvais : Requête Supabase directe**
+```typescript
+function ToolsList() {
+  const [tools, setTools] = useState([]);
+
+  useEffect(() => {
+    // ❌ NE PAS FAIRE
+    supabase.from('tools').select('*').then(({ data }) => setTools(data));
+  }, []);
+
+  return <div>{/* ... */}</div>;
+}
+```
+
+**✅ Bon : Via API Layer**
+```typescript
+import { toolsApi } from '@/api';
+
+function ToolsList() {
+  const [tools, setTools] = useState<EnhancedTool[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    loadTools();
+  }, []);
+
+  const loadTools = async () => {
+    try {
+      setLoading(true);
+      const data = await toolsApi.list();
+      setTools(data);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Erreur inconnue');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  if (loading) return <LoadingSpinner />;
+  if (error) return <ErrorMessage message={error} />;
+
+  return (
+    <div className="grid md:grid-cols-3 gap-4">
+      {tools.map(tool => (
+        <ToolCard key={tool.id} tool={tool} />
+      ))}
+    </div>
+  );
+}
+```
+
+---
+
+### Avec Custom Hook (meilleure approche)
+
+```typescript
+import { useAppData } from '@/hooks/useAppData';
+
+function ToolsList() {
+  const { tools, loading, error } = useAppData();
+
+  if (loading) return <LoadingSpinner />;
+  if (error) return <ErrorMessage message={error} />;
+
+  return (
+    <div className="grid md:grid-cols-3 gap-4">
+      {tools.map(tool => (
+        <ToolCard key={tool.id} tool={tool} />
+      ))}
+    </div>
+  );
+}
+```
+
+---
+
+## Bonnes pratiques
+
+### ✅ À faire
+
+**Toujours typer les retours API**
+```typescript
+// ✅ Bon
+async list(): Promise<EnhancedTool[]> {
+  const { data, error } = await supabase.from('tools').select('*');
+  if (error) throw handleSupabaseError(error);
+  return data;
+}
+
+// ❌ Mauvais
+async list() {
+  return await supabase.from('tools').select('*');
+}
+```
+
+**Gérer toutes les erreurs**
+```typescript
+try {
+  const tool = await toolsApi.create(newTool);
+  toast.success('Outil créé avec succès');
+} catch (error) {
+  if (error instanceof ApiError) {
+    toast.error(error.message);
+  } else {
+    toast.error('Erreur inattendue');
+  }
+}
+```
+
+**Utiliser les filtres typés**
+```typescript
+const filters: ToolFilters = {
+  category_id: 'uuid-123',
+  pricing_tier: 'Gratuit',
+  search: 'notion'
+};
+
+const tools = await toolsApi.list(filters);
+```
+
+---
+
+### ❌ À éviter
+
+**Ne pas catcher les erreurs silencieusement**
+```typescript
+// ❌ Mauvais
+try {
+  await toolsApi.create(tool);
+} catch (error) {
+  // Rien : l'utilisateur ne sait pas qu'il y a eu un problème
+}
+
+// ✅ Bon
+try {
+  await toolsApi.create(tool);
+} catch (error) {
+  console.error('Creation failed:', error);
+  toast.error('Impossible de créer l\'outil');
+}
+```
+
+**Ne pas faire de mutations sans confirmation**
+```typescript
+// ❌ Mauvais
+const handleDelete = async (id: string) => {
+  await toolsApi.delete(id);
+};
+
+// ✅ Bon
+const handleDelete = async (id: string) => {
+  if (!confirm('Êtes-vous sûr de vouloir supprimer cet outil ?')) {
+    return;
+  }
+  
+  try {
+    await toolsApi.delete(id);
+    toast.success('Outil supprimé');
+    reloadData();
+  } catch (error) {
+    toast.error('Erreur lors de la suppression');
+  }
+};
+```
+
+---
+
+## Testing de l'API Layer
+
+### Mock Supabase Client
+
+**Fichier :** `src/api/__tests__/tools.spec.ts`
+
+```typescript
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { toolsApi } from '../tools';
+import * as client from '../client';
+
+// Mock du client Supabase
+vi.mock('../client', () => ({
+  supabase: {
+    from: vi.fn()
+  }
+}));
+
+describe('toolsApi', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('should list all tools', async () => {
+    const mockTools = [
+      { id: '1', name: 'Notion', description: 'Tool 1' },
+      { id: '2', name: 'Slack', description: 'Tool 2' }
+    ];
+
+    const mockSelect = vi.fn().mockResolvedValue({
+      data: mockTools,
+      error: null
+    });
+
+    vi.mocked(client.supabase.from).mockReturnValue({
+      select: mockSelect
+    } as any);
+
+    const result = await toolsApi.list();
+
+    expect(result).toEqual(mockTools);
+    expect(client.supabase.from).toHaveBeenCalledWith('tools');
+  });
+
+  it('should handle errors correctly', async () => {
+    const mockError = { code: 'PGRST116', message: 'Not found' };
+
+    vi.mocked(client.supabase.from).mockReturnValue({
+      select: vi.fn().mockResolvedValue({
+        data: null,
+        error: mockError
+      })
+    } as any);
+
+    await expect(toolsApi.list()).rejects.toThrow();
+  });
+});
+```
+
+---
+
+## Ressources
+
+<CardGroup cols={2}>
+  <Card title="Database Schema" icon="database" href="/database/schema">
+    Structure des tables pour comprendre les relations
+  </Card>
+  <Card title="Custom Hooks" icon="hook" href="/development/hooks">
+    Hooks qui utilisent l'API Layer
+  </Card>
+  <Card title="Testing" icon="test-tube" href="/development/testing">
+    Guide complet pour tester l'API
+  </Card>
+  <Card title="RLS Policies" icon="shield" href="/database/rls">
+    Comprendre les restrictions d'accès
+  </Card>
+</CardGroup>

@@ -1,0 +1,500 @@
+---
+title: 'Guide de Démarrage Développeur'
+description: 'Installation locale en 10 minutes et premier pas dans le codebase'
+---
+
+## Vue d'ensemble
+
+Ce guide vous permet de configurer Kit'Asso en local et de commencer à développer rapidement. En 10 minutes, vous aurez un environnement fonctionnel avec base de données Supabase et serveur de développement Vite.
+
+**Prérequis :**
+- Node.js 18+ installé
+- npm ou yarn
+- Compte Supabase (gratuit)
+- Git
+- Éditeur de code (VS Code recommandé)
+
+---
+
+## Installation en 10 minutes
+
+### Étape 1 : Cloner le projet
+
+```bash
+# Cloner le repository
+git clone https://github.com/Lucdidi3514/assopedia-v2
+cd kit-asso
+
+# Vérifier Node.js version
+node --version  # Doit être 18+
+```
+
+---
+
+### Étape 2 : Installer les dépendances
+
+```bash
+# Installation
+npm install
+
+# Temps estimé : 2-3 minutes
+```
+
+**Dépendances principales installées :**
+- React 18 + TypeScript
+- Vite 6.3.5
+- Supabase Client
+- React Router v6
+- React Hook Form + Zod
+- Tailwind CSS
+- Lucide React (icons)
+
+---
+
+### Étape 3 : Configuration Supabase
+
+**3.1 Créer un projet Supabase**
+
+1. Aller sur [supabase.com](https://supabase.com)
+2. Cliquer sur "New Project"
+3. Remplir les informations :
+   - Name: `kit-asso-dev`
+   - Database Password: (générer un mot de passe fort)
+   - Region: Europe West (ou proche de vous)
+4. Attendre ~2 minutes (création du projet)
+
+**3.2 Récupérer les credentials**
+
+Dans le dashboard Supabase :
+1. Aller dans **Settings** > **API**
+2. Copier **Project URL** (commence par `https://xxxxx.supabase.co`)
+3. Copier **anon public** key (longue chaîne JWT)
+
+**3.3 Configurer les variables d'environnement**
+
+```bash
+# Créer le fichier .env
+cp .env.example .env
+
+# Éditer .env avec vos credentials
+nano .env  # ou code .env
+```
+
+**Contenu de `.env` :**
+```bash
+VITE_SUPABASE_URL=https://xxxxx.supabase.co
+VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+```
+
+---
+
+### Étape 4 : Initialiser la base de données
+
+**4.1 Créer les tables (via SQL Editor)**
+
+1. Dans Supabase Dashboard → **SQL Editor**
+2. Copier le contenu de `supabase/migrations/` dans l'ordre
+3. Exécuter migration par migration
+
+**Alternative : Script automatique**
+```bash
+# Si Supabase CLI installé
+npm install -g supabase
+supabase link --project-ref your-project-ref
+supabase db push
+```
+
+**Tables créées (13) :**
+- tools, categories, filters, tool_features
+- workflows, workflow_steps
+- tool_packs, pack_tools
+- quizzes, quiz_questions, quiz_answers, quiz_recommendations, quiz_responses
+- site_assets
+
+**4.2 Créer les Storage Buckets**
+
+Dans **Storage** > **New Bucket** :
+- Nom : `tool_logos`, Public : ✅, File size limit : 2MB
+- Nom : `site_assets`, Public : ✅, File size limit : 5MB
+
+**4.3 Insérer des données de test (optionnel)**
+
+```sql
+-- Créer une catégorie
+INSERT INTO categories (name) VALUES ('Communication');
+
+-- Créer un outil de test
+INSERT INTO tools (name, description, pricing_tier, category_id)
+VALUES (
+  'Notion',
+  'Outil tout-en-un pour la gestion de projets',
+  'Freemium',
+  (SELECT id FROM categories WHERE name = 'Communication')
+);
+```
+
+---
+
+### Étape 5 : Lancer le serveur de développement
+
+```bash
+# Démarrer Vite
+npm run dev
+
+# Serveur disponible sur http://localhost:5173
+```
+
+**Ce qui se passe :**
+1. Vite compile le code TypeScript
+2. Tailwind génère les styles CSS
+3. Hot Module Replacement (HMR) activé
+4. Navigateur s'ouvre automatiquement
+
+**Vérification :**
+- ✅ Page d'accueil affichée
+- ✅ Pas d'erreur dans la console
+- ✅ Connexion Supabase OK (vérifier Network tab)
+
+---
+
+### Étape 6 : Créer un compte admin
+
+**6.1 Via Supabase Dashboard**
+
+1. **Authentication** > **Users** > **Add user**
+2. Email : `admin@kitasso.fr`
+3. Password : `votre-mot-de-passe`
+4. Auto Confirm : ✅
+
+**6.2 Se connecter**
+
+1. Aller sur `http://localhost:5173/login`
+2. Entrer email + password
+3. Redirection vers `/admin`
+4. ✅ Dashboard admin accessible
+
+---
+
+## Structure du projet
+
+### Aperçu des dossiers
+
+```
+kit-asso/
+├── src/
+│   ├── api/              # Couche d'abstraction Supabase
+│   ├── components/       # Composants UI réutilisables
+│   ├── features/         # Modules par domaine métier
+│   ├── hooks/            # Custom React hooks
+│   ├── lib/              # Utilitaires core (auth, storage)
+│   ├── pages/            # Pages route
+│   ├── types/            # Définitions TypeScript
+│   ├── utils/            # Helpers (icons, colors, sanitization)
+│   ├── App.tsx           # Root component
+│   ├── main.tsx          # Entry point
+│   └── router.tsx        # React Router config
+├── supabase/
+│   └── migrations/       # 43 fichiers SQL
+├── public/               # Assets statiques
+├── .env                  # Variables d'environnement (à créer)
+├── package.json
+├── vite.config.ts
+└── tailwind.config.js
+```
+
+---
+
+## Premiers pas dans le code
+
+### 1. Comprendre l'architecture API Layer
+
+**Fichier :** `src/api/tools.ts`
+
+```typescript
+import { supabase } from './client';
+import { handleSupabaseError } from './base';
+
+export const toolsApi = {
+  // Lister tous les outils
+  async list() {
+    const { data, error } = await supabase
+      .from('tools')
+      .select(`
+        *,
+        category:categories(name),
+        features:tool_features(filter:filters(*))
+      `);
+
+    if (error) throw handleSupabaseError(error);
+    return data;
+  },
+
+  // Créer un outil
+  async create(tool: ToolInsert) {
+    const { data, error } = await supabase
+      .from('tools')
+      .insert(tool)
+      .select()
+      .single();
+
+    if (error) throw handleSupabaseError(error);
+    return data;
+  }
+};
+```
+
+**Utilisation dans un composant :**
+```typescript
+import { toolsApi } from '@/api';
+
+function ToolsList() {
+  const [tools, setTools] = useState([]);
+
+  useEffect(() => {
+    toolsApi.list().then(setTools);
+  }, []);
+
+  return (
+    <div>
+      {tools.map(tool => (
+        <div key={tool.id}>{tool.name}</div>
+      ))}
+    </div>
+  );
+}
+```
+
+---
+
+### 2. Utiliser les Custom Hooks
+
+**Hook :** `src/hooks/useAppData.ts`
+
+```typescript
+import { useAppData } from '@/hooks/useAppData';
+
+function HomePage() {
+  const { tools, workflows, packs, loading, error } = useAppData();
+
+  if (loading) return <LoadingSpinner />;
+  if (error) return <ErrorMessage />;
+
+  return (
+    <div>
+      <h1>Catalogue : {tools.length} outils</h1>
+      <ToolsGrid tools={tools} />
+    </div>
+  );
+}
+```
+
+**Avantages :**
+- Gestion du loading automatique
+- Retry logic intégré
+- Fallback data si erreur réseau
+
+---
+
+### 3. Créer un nouveau composant
+
+**Fichier :** `src/components/ToolCard.tsx`
+
+```typescript
+import { Tool } from '@/types/database';
+import { ToolLogo } from './ToolLogo';
+import { PricingBadge } from './PricingBadge';
+
+interface ToolCardProps {
+  tool: Tool;
+  onClick?: () => void;
+}
+
+export function ToolCard({ tool, onClick }: ToolCardProps) {
+  return (
+    <div 
+      onClick={onClick}
+      className="bg-white rounded-lg p-4 shadow-md hover:shadow-lg transition-shadow cursor-pointer"
+    >
+      <ToolLogo url={tool.logo_url} name={tool.name} size="md" />
+      <h3 className="font-semibold mt-3">{tool.name}</h3>
+      <p className="text-sm text-gray-600 mt-1">{tool.description}</p>
+      <PricingBadge tier={tool.pricing_tier} className="mt-3" />
+    </div>
+  );
+}
+```
+
+---
+
+### 4. Ajouter une nouvelle route
+
+**Fichier :** `src/router.tsx`
+
+```typescript
+import { createBrowserRouter } from 'react-router-dom';
+import { NewPage } from './pages/NewPage';
+
+export const router = createBrowserRouter([
+  {
+    path: '/',
+    element: <App />,
+    children: [
+      // ... routes existantes
+      {
+        path: '/nouvelle-page',
+        element: <NewPage />
+      }
+    ]
+  }
+]);
+```
+
+---
+
+## Commandes de développement
+
+### Scripts npm disponibles
+
+```bash
+# Développement
+npm run dev              # Serveur dev avec HMR
+
+# Build
+npm run build            # Build production
+npm run preview          # Preview du build
+
+# Tests
+npm test                 # Run tests once
+npm run test:watch       # Watch mode
+npm run test:coverage    # Coverage report
+
+# Qualité de code
+npm run lint             # ESLint check
+npm run typecheck        # TypeScript check
+
+# Analyse
+npm run analyze          # Bundle size analysis
+```
+
+---
+
+### Workflow de développement quotidien
+
+```bash
+# 1. Pull dernières modifications
+git pull origin main
+
+# 2. Installer nouvelles dépendances (si package.json modifié)
+npm install
+
+# 3. Lancer dev server
+npm run dev
+
+# 4. Développer avec HMR
+# ... modifier le code, sauvegarder, voir les changements instantanément
+
+# 5. Vérifier la qualité avant commit
+npm run lint
+npm run typecheck
+npm test
+
+# 6. Commit et push
+git add .
+git commit -m "feat: nouvelle fonctionnalité"
+git push
+```
+
+---
+
+## Debugging
+
+### Logs Supabase
+
+**Activer les logs détaillés :**
+```typescript
+// src/api/client.ts
+import { createClient } from '@supabase/supabase-js';
+
+export const supabase = createClient(
+  import.meta.env.VITE_SUPABASE_URL,
+  import.meta.env.VITE_SUPABASE_ANON_KEY,
+  {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true
+    },
+    // Activer les logs en dev
+    global: {
+      headers: {
+        'x-client-info': 'kit-asso-dev'
+      }
+    }
+  }
+);
+```
+
+**Vérifier les requêtes :**
+- Chrome DevTools > Network > Filter: `supabase`
+- Voir les queries SQL exécutées
+- Vérifier les codes de statut (200 OK, 401 Unauthorized)
+
+---
+
+### React DevTools
+
+**Installation :**
+```bash
+# Extension Chrome/Firefox
+# Rechercher "React Developer Tools"
+```
+
+**Utilisation :**
+1. Ouvrir DevTools > Components
+2. Inspecter la hiérarchie de composants
+3. Voir les props/state en temps réel
+4. Profiler les rendus
+
+---
+
+### Erreurs fréquentes
+
+**Erreur : "Invalid API key"**
+```bash
+# Vérifier .env
+cat .env
+
+# Relancer le serveur
+npm run dev
+```
+
+**Erreur : "Table doesn't exist"**
+```bash
+# Vérifier les migrations Supabase
+# Dashboard > SQL Editor > Vérifier les tables
+```
+
+**Erreur : "RLS policy violation"**
+```bash
+# Se connecter en tant qu'admin
+# Ou vérifier les policies dans /database/rls
+```
+
+---
+
+## Ressources
+
+<CardGroup cols={2}>
+  <Card title="API Layer" icon="code" href="/development/api-layer">
+    Guide complet d'utilisation de l'API
+  </Card>
+  <Card title="Hooks Custom" icon="hook" href="/development/hooks">
+    Documentation des hooks métier
+  </Card>
+  <Card title="Composants UI" icon="box" href="/development/components">
+    Catalogue des composants réutilisables
+  </Card>
+  <Card title="Conventions" icon="book" href="/development/conventions">
+    Standards de code et best practices
+  </Card>
+</CardGroup>

@@ -1,0 +1,678 @@
+---
+title: 'Testing'
+description: 'Guide complet pour tester avec Vitest, React Testing Library et mocks'
+---
+
+## Vue d'ensemble
+
+Kit'Asso utilise **Vitest** comme test runner et **React Testing Library** pour tester les composants. L'approche privilégie les tests qui reflètent l'utilisation réelle par les utilisateurs.
+
+**Stack de test :**
+- Vitest 3.2.4 (test runner rapide, Vite-native)
+- @testing-library/react (tests composants)
+- @testing-library/jest-dom (matchers DOM)
+- @testing-library/user-event (interactions utilisateur)
+- jsdom (environnement DOM simulé)
+
+**Coverage actuel :** ~55% (objectif: 80%)
+
+---
+
+## Configuration
+
+### Vitest Config
+
+**Fichier :** `vitest.config.ts`
+
+```typescript
+import { defineConfig } from 'vitest/config';
+import react from '@vitejs/plugin-react';
+import path from 'path';
+
+export default defineConfig({
+  plugins: [react()],
+  test: {
+    globals: true,
+    environment: 'jsdom',
+    setupFiles: ['./src/test/setup.ts'],
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'html', 'json'],
+      exclude: [
+        'node_modules/',
+        'src/test/',
+        '**/*.spec.ts',
+        '**/*.spec.tsx',
+        'src/types/'
+      ]
+    }
+  },
+  resolve: {
+    alias: {
+      '@': path.resolve(__dirname, './src')
+    }
+  }
+});
+```
+
+### Setup File
+
+**Fichier :** `src/test/setup.ts`
+
+```typescript
+import { expect, afterEach, vi } from 'vitest';
+import { cleanup } from '@testing-library/react';
+import * as matchers from '@testing-library/jest-dom/matchers';
+
+// Étendre les matchers Vitest
+expect.extend(matchers);
+
+// Cleanup après chaque test
+afterEach(() => {
+  cleanup();
+});
+
+// Mock window.matchMedia
+Object.defineProperty(window, 'matchMedia', {
+  writable: true,
+  value: vi.fn().mockImplementation(query => ({
+    matches: false,
+    media: query,
+    onchange: null,
+    addListener: vi.fn(),
+    removeListener: vi.fn(),
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    dispatchEvent: vi.fn()
+  }))
+});
+
+// Mock IntersectionObserver
+global.IntersectionObserver = class IntersectionObserver {
+  constructor() {}
+  disconnect() {}
+  observe() {}
+  takeRecords() {
+    return [];
+  }
+  unobserve() {}
+};
+```
+
+---
+
+## Tester l'API Layer
+
+### Test d'un module API
+
+**Fichier :** `src/api/__tests__/tools.spec.ts`
+
+```typescript
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { toolsApi } from '../tools';
+import * as client from '../client';
+
+// Mock du client Supabase
+vi.mock('../client', () => ({
+  supabase: {
+    from: vi.fn()
+  }
+}));
+
+describe('toolsApi', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  describe('list()', () => {
+    it('should return all tools with enriched data', async () => {
+      const mockData = [
+        {
+          id: '1',
+          name: 'Notion',
+          description: 'Tool for notes',
+          pricing_tier: 'Freemium',
+          category: { name: 'Productivity' },
+          features: [
+            { filter: { id: 'f1', value: 'API' } }
+          ]
+        }
+      ];
+
+      const mockSelect = vi.fn().mockResolvedValue({
+        data: mockData,
+        error: null
+      });
+
+      vi.mocked(client.supabase.from).mockReturnValue({
+        select: mockSelect
+      } as any);
+
+      const result = await toolsApi.list();
+
+      expect(result).toEqual([
+        {
+          ...mockData[0],
+          category_name: 'Productivity',
+          features: [{ id: 'f1', value: 'API' }]
+        }
+      ]);
+      expect(client.supabase.from).toHaveBeenCalledWith('tools');
+    });
+
+    it('should throw ApiError on failure', async () => {
+      const mockError = { code: 'PGRST116', message: 'Not found' };
+
+      vi.mocked(client.supabase.from).mockReturnValue({
+        select: vi.fn().mockResolvedValue({
+          data: null,
+          error: mockError
+        })
+      } as any);
+
+      await expect(toolsApi.list()).rejects.toThrow();
+    });
+  });
+
+  describe('create()', () => {
+    it('should create a new tool', async () => {
+      const newTool = {
+        name: 'Slack',
+        description: 'Team communication',
+        pricing_tier: 'Freemium' as const
+      };
+
+      const mockInsert = vi.fn().mockReturnValue({
+        select: vi.fn().mockReturnValue({
+          single: vi.fn().mockResolvedValue({
+            data: { id: '2', ...newTool },
+            error: null
+          })
+        })
+      });
+
+      vi.mocked(client.supabase.from).mockReturnValue({
+        insert: mockInsert
+      } as any);
+
+      const result = await toolsApi.create(newTool);
+
+      expect(result).toEqual({ id: '2', ...newTool });
+      expect(mockInsert).toHaveBeenCalledWith(newTool);
+    });
+  });
+});
+```
+
+---
+
+## Tester les Hooks
+
+### Test d'un custom hook
+
+**Fichier :** `src/hooks/__tests__/useFavorites.spec.ts`
+
+```typescript
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { renderHook, act } from '@testing-library/react';
+import { useFavorites } from '../useFavorites';
+
+describe('useFavorites', () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+
+  afterEach(() => {
+    localStorage.clear();
+  });
+
+  it('should initialize with empty favorites', () => {
+    const { result } = renderHook(() => useFavorites());
+
+    expect(result.current.favorites).toEqual([]);
+    expect(result.current.count).toBe(0);
+  });
+
+  it('should add a favorite', () => {
+    const { result } = renderHook(() => useFavorites());
+
+    act(() => {
+      result.current.addFavorite('tool-1');
+    });
+
+    expect(result.current.favorites).toContain('tool-1');
+    expect(result.current.count).toBe(1);
+    expect(result.current.isFavorite('tool-1')).toBe(true);
+  });
+
+  it('should not add duplicate favorites', () => {
+    const { result } = renderHook(() => useFavorites());
+
+    act(() => {
+      result.current.addFavorite('tool-1');
+      result.current.addFavorite('tool-1');
+    });
+
+    expect(result.current.count).toBe(1);
+  });
+
+  it('should remove a favorite', () => {
+    const { result } = renderHook(() => useFavorites());
+
+    act(() => {
+      result.current.addFavorite('tool-1');
+      result.current.removeFavorite('tool-1');
+    });
+
+    expect(result.current.favorites).not.toContain('tool-1');
+    expect(result.current.count).toBe(0);
+  });
+
+  it('should toggle favorite', () => {
+    const { result } = renderHook(() => useFavorites());
+
+    act(() => {
+      result.current.toggleFavorite('tool-1');
+    });
+    expect(result.current.isFavorite('tool-1')).toBe(true);
+
+    act(() => {
+      result.current.toggleFavorite('tool-1');
+    });
+    expect(result.current.isFavorite('tool-1')).toBe(false);
+  });
+
+  it('should persist to localStorage', () => {
+    const { result } = renderHook(() => useFavorites());
+
+    act(() => {
+      result.current.addFavorite('tool-1');
+    });
+
+    const stored = localStorage.getItem('kitasso_favorites');
+    expect(stored).toBe(JSON.stringify(['tool-1']));
+  });
+});
+```
+
+---
+
+## Tester les Composants
+
+### Test d'un composant simple
+
+**Fichier :** `src/components/__tests__/Button.spec.tsx`
+
+```typescript
+import { describe, it, expect, vi } from 'vitest';
+import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { Button } from '../ui/Button';
+
+describe('Button', () => {
+  it('should render with children', () => {
+    render(<Button>Click me</Button>);
+
+    expect(screen.getByText('Click me')).toBeInTheDocument();
+  });
+
+  it('should call onClick when clicked', async () => {
+    const handleClick = vi.fn();
+    const user = userEvent.setup();
+
+    render(<Button onClick={handleClick}>Click me</Button>);
+
+    await user.click(screen.getByText('Click me'));
+
+    expect(handleClick).toHaveBeenCalledTimes(1);
+  });
+
+  it('should be disabled when disabled prop is true', () => {
+    render(<Button disabled>Click me</Button>);
+
+    expect(screen.getByText('Click me')).toBeDisabled();
+  });
+
+  it('should show loading state', () => {
+    render(<Button loading>Click me</Button>);
+
+    expect(screen.getByRole('button')).toBeDisabled();
+    // Vérifier la présence du spinner
+    expect(screen.getByRole('button').querySelector('svg')).toBeInTheDocument();
+  });
+
+  it('should apply correct variant classes', () => {
+    const { rerender } = render(<Button variant="primary">Test</Button>);
+    expect(screen.getByRole('button')).toHaveClass('from-indigo-600');
+
+    rerender(<Button variant="danger">Test</Button>);
+    expect(screen.getByRole('button')).toHaveClass('bg-red-600');
+  });
+});
+```
+
+---
+
+### Test d'un composant complexe
+
+**Fichier :** `src/components/__tests__/ToolCard.spec.tsx`
+
+```typescript
+import { describe, it, expect, vi } from 'vitest';
+import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { ToolCard } from '../ToolCard';
+import { createMockTool } from '@/test/mockFactories';
+
+// Mock du hook useFavorites
+vi.mock('@/hooks/useFavorites', () => ({
+  useFavorites: () => ({
+    isFavorite: vi.fn().mockReturnValue(false),
+    toggleFavorite: vi.fn()
+  })
+}));
+
+describe('ToolCard', () => {
+  const mockTool = createMockTool({
+    name: 'Notion',
+    description: 'All-in-one workspace',
+    pricing_tier: 'Freemium'
+  });
+
+  it('should render tool information', () => {
+    render(<ToolCard tool={mockTool} />);
+
+    expect(screen.getByText('Notion')).toBeInTheDocument();
+    expect(screen.getByText('All-in-one workspace')).toBeInTheDocument();
+    expect(screen.getByText('Freemium')).toBeInTheDocument();
+  });
+
+  it('should call onClick when card is clicked', async () => {
+    const handleClick = vi.fn();
+    const user = userEvent.setup();
+
+    render(<ToolCard tool={mockTool} onClick={handleClick} />);
+
+    await user.click(screen.getByText('Notion'));
+
+    expect(handleClick).toHaveBeenCalled();
+  });
+
+  it('should toggle favorite without triggering card click', async () => {
+    const handleClick = vi.fn();
+    const { useFavorites } = await import('@/hooks/useFavorites');
+    const mockToggleFavorite = vi.fn();
+    
+    vi.mocked(useFavorites).mockReturnValue({
+      isFavorite: vi.fn().mockReturnValue(false),
+      toggleFavorite: mockToggleFavorite
+    } as any);
+
+    const user = userEvent.setup();
+
+    render(<ToolCard tool={mockTool} onClick={handleClick} />);
+
+    const favoriteButton = screen.getByLabelText(/ajouter aux favoris/i);
+    await user.click(favoriteButton);
+
+    expect(mockToggleFavorite).toHaveBeenCalledWith(mockTool.id);
+    expect(handleClick).not.toHaveBeenCalled(); // Card click shouldn't trigger
+  });
+});
+```
+
+---
+
+## Mock Factories
+
+### Créer des données de test
+
+**Fichier :** `src/test/mockFactories.ts`
+
+```typescript
+import { EnhancedTool, Workflow, ToolPack } from '@/api/types';
+
+export function createMockTool(overrides?: Partial<EnhancedTool>): EnhancedTool {
+  return {
+    id: 'tool-123',
+    name: 'Test Tool',
+    description: 'A test tool for testing',
+    pricing_tier: 'Gratuit',
+    category_id: 'cat-123',
+    category_name: 'Test Category',
+    logo_url: 'https://example.com/logo.png',
+    website_url: 'https://example.com',
+    features: [],
+    created_at: new Date().toISOString(),
+    ...overrides
+  };
+}
+
+export function createMockWorkflow(overrides?: Partial<Workflow>): Workflow {
+  return {
+    id: 'workflow-123',
+    title: 'Test Workflow',
+    description: 'A test workflow',
+    difficulty: 'débutant',
+    duration: '30min',
+    category: 'Test',
+    icon: 'Rocket',
+    status: 'active',
+    steps: [],
+    display_order: 0,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    ...overrides
+  };
+}
+
+export function createMockPack(overrides?: Partial<ToolPack>): ToolPack {
+  return {
+    id: 'pack-123',
+    title: 'Test Pack',
+    description: 'A test pack',
+    icon: 'Package',
+    color: 'blue',
+    display_order: 0,
+    status: 'active',
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+    ...overrides
+  };
+}
+```
+
+---
+
+## Test Utilities
+
+### Render personnalisé avec providers
+
+**Fichier :** `src/test/testUtils.tsx`
+
+```typescript
+import { ReactElement } from 'react';
+import { render, RenderOptions } from '@testing-library/react';
+import { BrowserRouter } from 'react-router-dom';
+import { AuthProvider } from '@/lib/auth';
+
+interface CustomRenderOptions extends Omit<RenderOptions, 'wrapper'> {
+  initialRoute?: string;
+}
+
+function AllTheProviders({ children }: { children: React.ReactNode }) {
+  return (
+    <BrowserRouter>
+      <AuthProvider>
+        {children}
+      </AuthProvider>
+    </BrowserRouter>
+  );
+}
+
+export function renderWithProviders(
+  ui: ReactElement,
+  options?: CustomRenderOptions
+) {
+  return render(ui, { wrapper: AllTheProviders, ...options });
+}
+
+// Re-export everything
+export * from '@testing-library/react';
+export { renderWithProviders as render };
+```
+
+**Usage :**
+```typescript
+import { render, screen } from '@/test/testUtils';
+
+test('component with router', () => {
+  render(<MyComponent />);
+  // Le composant a accès au router et auth context
+});
+```
+
+---
+
+## Commandes de test
+
+### Scripts disponibles
+
+```bash
+# Run all tests
+npm test
+
+# Watch mode (re-run on changes)
+npm run test:watch
+
+# Coverage report
+npm run test:coverage
+
+# Run specific file
+npm test -- tools.spec.ts
+
+# Run tests matching pattern
+npm test -- --grep "should create"
+
+# UI mode (interactive)
+npm run test:ui
+```
+
+---
+
+## Coverage
+
+### Générer le rapport
+
+```bash
+npm run test:coverage
+```
+
+**Output :**
+```
+Coverage report in coverage/index.html
+```
+
+**Ouvrir dans le navigateur :**
+```bash
+open coverage/index.html
+```
+
+### Objectifs de coverage
+
+```typescript
+// vitest.config.ts
+coverage: {
+  thresholds: {
+    lines: 80,
+    functions: 80,
+    branches: 75,
+    statements: 80
+  }
+}
+```
+
+---
+
+## Bonnes pratiques
+
+### ✅ À faire
+
+**Tester le comportement, pas l'implémentation**
+```typescript
+// ✅ Bon : test du comportement utilisateur
+it('should add tool to favorites when heart is clicked', async () => {
+  render(<ToolCard tool={mockTool} />);
+  await userEvent.click(screen.getByLabelText(/ajouter aux favoris/i));
+  expect(screen.getByLabelText(/retirer des favoris/i)).toBeInTheDocument();
+});
+
+// ❌ Mauvais : test de l'implémentation
+it('should call setFavorites with new array', () => {
+  // Teste des détails internes
+});
+```
+
+**Utiliser des queries accessibles**
+```typescript
+// ✅ Bon : queries par rôle/label
+screen.getByRole('button', { name: /enregistrer/i });
+screen.getByLabelText(/nom de l'outil/i);
+screen.getByText(/notion/i);
+
+// ❌ Mauvais : queries par classe CSS
+screen.getByClassName('tool-card');
+```
+
+**Mock au bon niveau**
+```typescript
+// ✅ Bon : mock l'API, pas les hooks
+vi.mock('@/api', () => ({
+  toolsApi: {
+    list: vi.fn().mockResolvedValue([])
+  }
+}));
+
+// ❌ Mauvais : mock trop profond
+vi.mock('@/hooks/useAppData');
+```
+
+---
+
+### ❌ À éviter
+
+**Ne pas tester les détails d'implémentation**
+```typescript
+// ❌ Mauvais
+expect(component.state.count).toBe(1);
+
+// ✅ Bon
+expect(screen.getByText('Count: 1')).toBeInTheDocument();
+```
+
+**Ne pas ignorer les erreurs de console**
+```typescript
+// ❌ Mauvais
+vi.spyOn(console, 'error').mockImplementation(() => {});
+
+// ✅ Bon : corriger la cause de l'erreur
+```
+
+---
+
+## Ressources
+
+<CardGroup cols={2}>
+  <Card title="API Layer" icon="code" href="/development/api-layer">
+    Tests des modules API
+  </Card>
+  <Card title="Custom Hooks" icon="hook" href="/development/hooks">
+    Tests des hooks
+  </Card>
+  <Card title="Components" icon="box" href="/development/components">
+    Tests des composants UI
+  </Card>
+  <Card title="Conventions" icon="book" href="/development/conventions">
+    Standards de qualité de code
+  </Card>
+</CardGroup>
