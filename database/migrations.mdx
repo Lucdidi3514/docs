@@ -1,0 +1,572 @@
+---
+title: 'Migrations Database'
+description: 'Gestion des 43 migrations Supabase avec processus de déploiement et rollback'
+---
+
+## Vue d'ensemble
+
+Kit'Asso utilise **43 fichiers de migration SQL** qui tracent l'évolution complète du schéma de base de données. Chaque migration est versionnée avec un timestamp et documentée pour faciliter le déploiement et le rollback.
+
+**Convention de nommage :**
+```
+YYYYMMDDHHMMSS_description.sql
+```
+
+**Exemple :**
+```
+20240115103000_create_tools_table.sql
+20240115104500_add_rls_policies_tools.sql
+20240116091200_create_workflows_table.sql
+```
+
+**Avantages :**
+- Historique complet des changements de schéma
+- Déploiement reproductible sur tous les environnements
+- Rollback possible en cas d'erreur
+- Documentation intégrée dans les fichiers SQL
+
+---
+
+## Structure d'une migration
+
+### Migration complète typique
+
+**Fichier :** `20240115103000_create_tools_table.sql`
+
+```sql
+-- Description: Création de la table tools pour le catalogue d'outils
+-- Created: 2024-01-15
+-- Author: Kit'Asso Team
+
+-- ============================================
+-- 1. CREATE TABLE
+-- ============================================
+
+CREATE TABLE IF NOT EXISTS tools (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  name TEXT UNIQUE NOT NULL,
+  description TEXT NOT NULL,
+  pricing_tier TEXT CHECK (pricing_tier IN ('Gratuit', 'Freemium', 'Payant', 'Entreprise')),
+  category_id UUID REFERENCES categories(id) ON DELETE SET NULL,
+  logo_url TEXT,
+  website_url TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ============================================
+-- 2. CREATE INDEXES
+-- ============================================
+
+CREATE INDEX IF NOT EXISTS idx_tools_category_id ON tools(category_id);
+CREATE INDEX IF NOT EXISTS idx_tools_pricing_tier ON tools(pricing_tier);
+CREATE INDEX IF NOT EXISTS idx_tools_name ON tools(name);
+
+-- ============================================
+-- 3. ENABLE ROW LEVEL SECURITY
+-- ============================================
+
+ALTER TABLE tools ENABLE ROW LEVEL SECURITY;
+
+-- ============================================
+-- 4. CREATE RLS POLICIES
+-- ============================================
+
+-- Public read
+CREATE POLICY "Allow public read on tools"
+  ON tools
+  FOR SELECT
+  TO public
+  USING (true);
+
+-- Authenticated insert
+CREATE POLICY "Allow authenticated insert on tools"
+  ON tools
+  FOR INSERT
+  TO authenticated
+  WITH CHECK (true);
+
+-- Authenticated update
+CREATE POLICY "Allow authenticated update on tools"
+  ON tools
+  FOR UPDATE
+  TO authenticated
+  USING (true)
+  WITH CHECK (true);
+
+-- Authenticated delete
+CREATE POLICY "Allow authenticated delete on tools"
+  ON tools
+  FOR DELETE
+  TO authenticated
+  USING (true);
+
+-- ============================================
+-- 5. COMMENTS (Documentation)
+-- ============================================
+
+COMMENT ON TABLE tools IS 'Catalogue des outils numériques pour associations';
+COMMENT ON COLUMN tools.name IS 'Nom unique de l''outil';
+COMMENT ON COLUMN tools.pricing_tier IS 'Modèle tarifaire (Gratuit, Freemium, Payant, Entreprise)';
+```
+
+---
+
+## Chronologie des migrations
+
+### Phase 1 : Tables Core (Migrations 1-15)
+
+**Migrations principales :**
+
+```
+20240115103000_create_categories_table.sql
+20240115103500_create_tools_table.sql
+20240115104000_create_filters_table.sql
+20240115104500_create_tool_features_table.sql
+20240115105000_add_rls_policies_core_tables.sql
+20240116091000_create_site_assets_table.sql
+```
+
+**Contenu :**
+- Création des tables fondamentales (tools, categories, filters)
+- Relations many-to-many avec tool_features
+- Indexes pour performance
+- RLS policies pour sécurité
+- Table site_assets pour gestion centralisée
+
+---
+
+### Phase 2 : Workflows (Migrations 16-25)
+
+**Migrations principales :**
+
+```
+20240116092000_create_workflows_table.sql
+20240116093000_create_workflow_steps_table.sql
+20240116094000_add_workflow_jsonb_fields.sql
+20240116095000_add_workflow_steps_rich_content.sql
+20240117081000_add_rls_policies_workflows.sql
+```
+
+**Contenu :**
+- Table workflows avec champs JSONB (steps, next_steps, resources)
+- Table workflow_steps avec contenu enrichi (story, visuals, videos)
+- Contraintes CHECK pour difficulty et status
+- Policies RLS distinctes pour workflows actifs vs drafts
+- Indexes sur status et display_order
+
+**Evolution :**
+```sql
+-- Initial : steps en JSONB simple
+ALTER TABLE workflows ADD COLUMN steps JSONB DEFAULT '[]';
+
+-- Enrichissement : ajout de detailed_instructions, practical_tip
+ALTER TABLE workflow_steps ADD COLUMN detailed_instructions JSONB DEFAULT '[]';
+ALTER TABLE workflow_steps ADD COLUMN practical_tip TEXT;
+
+-- Contenu avancé : story, visuals, videos
+ALTER TABLE workflow_steps ADD COLUMN story JSONB;
+ALTER TABLE workflow_steps ADD COLUMN visuals JSONB;
+ALTER TABLE workflow_steps ADD COLUMN videos JSONB;
+```
+
+---
+
+### Phase 3 : Tool Packs (Migrations 26-32)
+
+**Migrations principales :**
+
+```
+20240117090000_create_tool_packs_table.sql
+20240117091000_create_pack_tools_table.sql
+20240117092000_add_pack_display_order.sql
+20240117093000_add_rls_policies_packs.sql
+```
+
+**Contenu :**
+- Table tool_packs avec icon, color, difficulty
+- Table pack_tools (join table avec display_order)
+- Contraintes UNIQUE sur (pack_id, tool_id)
+- Status active/draft pour packs
+- Policies pour filtrer packs actifs côté public
+
+---
+
+### Phase 4 : Quiz System (Migrations 33-43)
+
+**Migrations principales :**
+
+```
+20240118100000_create_quizzes_table.sql
+20240118101000_create_quiz_questions_table.sql
+20240118102000_create_quiz_answers_table.sql
+20240118103000_create_quiz_recommendations_table.sql
+20240118104000_create_quiz_responses_table.sql
+20240118105000_add_rls_policies_quiz.sql
+20240118110000_add_quiz_condition_logic.sql
+```
+
+**Contenu :**
+- Tables pour quiz complet (quizzes, questions, answers, recommendations, responses)
+- Champ JSONB condition_logic pour recommandations
+- Policies complexes (public insert sur responses, read via parent quiz)
+- Slug unique pour routing
+- Arrays UUID pour recommended_pack_ids et recommended_tool_ids
+
+**Evolution :**
+```sql
+-- Initial : quiz basique
+CREATE TABLE quizzes (
+  id UUID PRIMARY KEY,
+  title TEXT NOT NULL,
+  slug TEXT UNIQUE NOT NULL
+);
+
+-- Ajout logique conditionnelle
+ALTER TABLE quiz_recommendations 
+  ADD COLUMN condition_logic JSONB NOT NULL;
+
+-- Ajout capture email
+ALTER TABLE quiz_responses 
+  ADD COLUMN email TEXT;
+```
+
+---
+
+## Processus de déploiement
+
+### Environnement local
+
+**Prérequis :**
+- Projet Supabase créé
+- Accès au SQL Editor dans le dashboard
+
+**Méthode 1 : Dashboard Supabase**
+
+1. Ouvrir Supabase Dashboard → SQL Editor
+2. Copier le contenu de la migration
+3. Exécuter le SQL
+4. Vérifier le résultat dans Table Editor
+
+**Méthode 2 : Supabase CLI (recommandé)**
+
+```bash
+# Installation CLI
+npm install -g supabase
+
+# Login
+supabase login
+
+# Link au projet
+supabase link --project-ref your-project-ref
+
+# Appliquer les migrations
+supabase db push
+
+# Vérifier le status
+supabase db status
+```
+
+---
+
+### Environnement de production
+
+**Processus complet :**
+
+```bash
+# 1. Backup de la base actuelle
+supabase db dump -f backup_$(date +%Y%m%d_%H%M%S).sql
+
+# 2. Tester les migrations en local d'abord
+supabase db reset # Reset local DB
+supabase db push  # Applique toutes les migrations
+
+# 3. Si tests OK, déployer en production
+supabase db push --linked
+
+# 4. Vérifier les tables créées
+supabase db status
+```
+
+**Checklist de déploiement :**
+- ✅ Backup effectué
+- ✅ Migrations testées en local
+- ✅ RLS policies vérifiées
+- ✅ Indexes créés
+- ✅ Contraintes validées
+- ✅ Données de test insérées
+- ✅ Frontend fonctionne avec nouveau schéma
+
+---
+
+## Ordre d'exécution des migrations
+
+**CRITIQUE : Respecter l'ordre chronologique**
+
+```bash
+# ❌ MAUVAIS : exécuter dans le désordre
+20240118_create_quiz_questions.sql  # Échoue : quiz table n'existe pas
+20240118_create_quizzes.sql
+
+# ✅ BON : ordre chronologique
+20240118100000_create_quizzes_table.sql
+20240118101000_create_quiz_questions_table.sql  # OK : quiz existe
+```
+
+**Dépendances entre migrations :**
+
+```
+categories → tools (foreign key category_id)
+tools + filters → tool_features (join table)
+workflows → workflow_steps (foreign key workflow_id)
+tool_packs → pack_tools (foreign key pack_id)
+quizzes → quiz_questions → quiz_answers (cascade)
+```
+
+**Script d'exécution complète :**
+
+```bash
+#!/bin/bash
+# apply_all_migrations.sh
+
+MIGRATIONS_DIR="supabase/migrations"
+
+for file in $(ls -1 $MIGRATIONS_DIR/*.sql | sort); do
+  echo "Applying: $file"
+  psql $DATABASE_URL -f $file
+  
+  if [ $? -eq 0 ]; then
+    echo "✅ Success: $file"
+  else
+    echo "❌ Failed: $file"
+    exit 1
+  fi
+done
+
+echo "🎉 All migrations applied successfully"
+```
+
+---
+
+## Rollback de migrations
+
+### Rollback simple (dernière migration)
+
+**Créer un fichier de rollback :**
+
+**Fichier :** `20240118110000_add_quiz_condition_logic_rollback.sql`
+
+```sql
+-- Rollback for: 20240118110000_add_quiz_condition_logic.sql
+
+-- Remove column
+ALTER TABLE quiz_recommendations DROP COLUMN IF EXISTS condition_logic;
+
+-- Remove policies (if created)
+DROP POLICY IF EXISTS "policy_name" ON table_name;
+
+-- Drop indexes (if created)
+DROP INDEX IF EXISTS idx_name;
+```
+
+**Exécution :**
+```bash
+psql $DATABASE_URL -f rollback_file.sql
+```
+
+---
+
+### Rollback complet (retour à version antérieure)
+
+**Option 1 : Restauration depuis backup**
+
+```bash
+# Restaurer backup
+psql $DATABASE_URL < backup_20240115.sql
+
+# Ré-appliquer migrations jusqu'au point souhaité
+for file in $(ls migrations/ | head -n 25); do
+  psql $DATABASE_URL -f migrations/$file
+done
+```
+
+**Option 2 : Supabase CLI**
+
+```bash
+# Reset complet (⚠️ DANGER : perte de données)
+supabase db reset
+
+# Ré-appliquer migrations sélectives
+supabase db push
+```
+
+---
+
+### Migrations réversibles
+
+**Pattern de migration avec UP et DOWN :**
+
+```sql
+-- ============================================
+-- UP Migration
+-- ============================================
+
+CREATE TABLE new_table (...);
+
+-- ============================================
+-- DOWN Migration (Commented, for reference)
+-- ============================================
+
+-- DROP TABLE IF EXISTS new_table;
+```
+
+**Usage :** Garder le code de rollback en commentaire pour référence.
+
+---
+
+## Bonnes pratiques
+
+### ✅ À faire
+
+**Toujours tester en local avant production**
+```bash
+# 1. Reset local
+supabase db reset
+
+# 2. Appliquer nouvelle migration
+psql local_db -f new_migration.sql
+
+# 3. Vérifier avec des queries
+SELECT * FROM new_table;
+
+# 4. Tester depuis frontend
+npm run dev
+```
+
+**Utiliser des transactions pour migrations complexes**
+```sql
+BEGIN;
+
+-- Plusieurs opérations
+ALTER TABLE tools ADD COLUMN new_field TEXT;
+UPDATE tools SET new_field = 'default_value';
+ALTER TABLE tools ALTER COLUMN new_field SET NOT NULL;
+
+COMMIT;
+-- Si erreur, rien n'est appliqué
+```
+
+**Documenter chaque migration**
+```sql
+-- Migration: Add email capture to quiz responses
+-- Date: 2024-01-18
+-- Reason: Allow follow-up communication with quiz takers
+-- Impact: No breaking changes, nullable column
+
+ALTER TABLE quiz_responses ADD COLUMN email TEXT;
+```
+
+**Créer des indexes pour colonnes fréquemment requêtées**
+```sql
+-- Souvent utilisé dans WHERE clauses
+CREATE INDEX idx_workflows_status ON workflows(status);
+
+-- Souvent utilisé dans JOIN
+CREATE INDEX idx_tool_features_tool_id ON tool_features(tool_id);
+
+-- Souvent utilisé dans ORDER BY
+CREATE INDEX idx_workflows_display_order ON workflows(display_order);
+```
+
+---
+
+### ❌ À éviter
+
+**Ne jamais modifier une migration déjà déployée**
+```bash
+# ❌ MAUVAIS : éditer 20240115_create_tools.sql après déploiement
+
+# ✅ BON : créer une nouvelle migration
+20240120_alter_tools_add_column.sql
+```
+
+**Ne pas supprimer des colonnes sans migration de données**
+```sql
+-- ❌ DANGER : perte de données
+ALTER TABLE tools DROP COLUMN logo_url;
+
+-- ✅ BON : migrer d'abord vers storage, puis supprimer
+-- Migration 1: Copier logo_url vers storage
+-- Migration 2: Vérifier que toutes les données sont migrées
+-- Migration 3: Supprimer la colonne
+```
+
+**Ne pas oublier les contraintes CASCADE**
+```sql
+-- ❌ Mauvais : ON DELETE RESTRICT (bloque la suppression)
+ALTER TABLE workflow_steps
+  ADD CONSTRAINT fk_workflow
+  FOREIGN KEY (workflow_id) REFERENCES workflows(id);
+
+-- ✅ Bon : ON DELETE CASCADE (supprime les steps automatiquement)
+ALTER TABLE workflow_steps
+  ADD CONSTRAINT fk_workflow
+  FOREIGN KEY (workflow_id) REFERENCES workflows(id)
+  ON DELETE CASCADE;
+```
+
+---
+
+## Vérification post-migration
+
+### Checklist de validation
+
+```sql
+-- 1. Vérifier que toutes les tables existent
+SELECT tablename FROM pg_tables 
+WHERE schemaname = 'public' 
+ORDER BY tablename;
+
+-- 2. Vérifier RLS activé
+SELECT tablename, rowsecurity 
+FROM pg_tables 
+WHERE schemaname = 'public';
+
+-- 3. Lister toutes les policies
+SELECT tablename, policyname 
+FROM pg_policies 
+WHERE schemaname = 'public'
+ORDER BY tablename;
+
+-- 4. Vérifier les indexes
+SELECT tablename, indexname 
+FROM pg_indexes 
+WHERE schemaname = 'public'
+ORDER BY tablename;
+
+-- 5. Compter les enregistrements
+SELECT 
+  'tools' as table_name, COUNT(*) FROM tools
+UNION ALL
+SELECT 'workflows', COUNT(*) FROM workflows
+UNION ALL
+SELECT 'tool_packs', COUNT(*) FROM tool_packs;
+```
+
+---
+
+## Ressources
+
+<CardGroup cols={2}>
+  <Card title="Database Schema" icon="database" href="/database/schema">
+    Structure complète des 13 tables créées
+  </Card>
+  <Card title="RLS Policies" icon="shield" href="/database/rls">
+    Sécurité appliquée dans les migrations
+  </Card>
+  <Card title="Supabase Setup" icon="cloud" href="/deployment/supabase">
+    Configuration du projet Supabase
+  </Card>
+  <Card title="Storage Buckets" icon="folder" href="/database/storage">
+    Migrations des buckets Supabase Storage
+  </Card>
+</CardGroup>

@@ -1,0 +1,797 @@
+---
+title: 'Schéma de Base de Données'
+description: 'Documentation complète des 13 tables PostgreSQL avec relations et contraintes'
+---
+
+## Vue d'ensemble
+
+Kit'Asso utilise **13 tables PostgreSQL** organisées en 4 domaines fonctionnels. La base de données est conçue pour supporter un catalogue d'outils, des workflows guidés, des packs curés et un système de quiz avec recommandations personnalisées.
+
+**Architecture :**
+- **Core Tables** (5) : tools, categories, filters, tool_features, site_assets
+- **Workflow Tables** (2) : workflows, workflow_steps
+- **Pack System** (2) : tool_packs, pack_tools
+- **Quiz System** (4) : quizzes, quiz_questions, quiz_answers, quiz_recommendations, quiz_responses
+
+**Statistiques :**
+- 43+ migrations tracking l'évolution du schéma
+- Row Level Security (RLS) activée sur toutes les tables
+- Indexes pour optimiser les requêtes fréquentes
+- Contraintes CHECK pour validation des données
+
+---
+
+## Core Tables
+
+### 1. tools
+
+Table principale du catalogue d'outils numériques.
+
+**Colonnes :**
+
+```sql
+CREATE TABLE tools (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  name TEXT UNIQUE NOT NULL,
+  description TEXT NOT NULL,
+  pricing_tier TEXT CHECK (pricing_tier IN ('Gratuit', 'Freemium', 'Payant', 'Entreprise')),
+  category_id UUID REFERENCES categories(id) ON DELETE SET NULL,
+  logo_url TEXT,
+  website_url TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+```
+
+**Index :**
+```sql
+CREATE INDEX idx_tools_category_id ON tools(category_id);
+CREATE INDEX idx_tools_pricing_tier ON tools(pricing_tier);
+CREATE INDEX idx_tools_name ON tools(name);
+```
+
+**Contraintes :**
+- `name` : Unique, requis
+- `description` : Requis
+- `pricing_tier` : Enum strict (4 valeurs)
+- `category_id` : Foreign key nullable (SET NULL on delete)
+
+**Type TypeScript :**
+```typescript
+interface Tool {
+  id: string;
+  name: string;
+  description: string;
+  pricing_tier: 'Gratuit' | 'Freemium' | 'Payant' | 'Entreprise';
+  category_id: string | null;
+  logo_url: string | null;
+  website_url: string | null;
+  created_at: string;
+}
+```
+
+**Exemple de données :**
+```json
+{
+  "id": "a1b2c3d4-...",
+  "name": "Notion",
+  "description": "Outil tout-en-un pour la gestion de projets et la documentation",
+  "pricing_tier": "Freemium",
+  "category_id": "cat-123",
+  "logo_url": "https://...supabase.co/storage/v1/object/public/tool_logos/notion.png",
+  "website_url": "https://notion.so",
+  "created_at": "2024-01-15T10:30:00Z"
+}
+```
+
+---
+
+### 2. categories
+
+Classification des outils par domaine d'activité.
+
+**Colonnes :**
+
+```sql
+CREATE TABLE categories (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  name TEXT UNIQUE NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+```
+
+**Contraintes :**
+- `name` : Unique, requis
+
+**Type TypeScript :**
+```typescript
+interface Category {
+  id: string;
+  name: string;
+  created_at: string;
+}
+```
+
+**Exemples de catégories :**
+- Communication
+- Gestion de projet
+- Comptabilité
+- Marketing
+- Événementiel
+- Formation
+
+---
+
+### 3. filters
+
+Définitions de fonctionnalités et capacités des outils.
+
+**Colonnes :**
+
+```sql
+CREATE TABLE filters (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  filter_type TEXT NOT NULL,
+  value TEXT NOT NULL,
+  feature_type TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+```
+
+**Index :**
+```sql
+CREATE INDEX idx_filters_filter_type ON filters(filter_type);
+```
+
+**Type TypeScript :**
+```typescript
+interface Filter {
+  id: string;
+  filter_type: string;
+  value: string;
+  feature_type: string | null;
+  created_at: string;
+}
+```
+
+**Exemples de filters :**
+```json
+[
+  {
+    "filter_type": "feature",
+    "value": "API disponible",
+    "feature_type": "integration"
+  },
+  {
+    "filter_type": "feature",
+    "value": "Application mobile",
+    "feature_type": "platform"
+  },
+  {
+    "filter_type": "capability",
+    "value": "Gestion d'équipe",
+    "feature_type": "collaboration"
+  }
+]
+```
+
+---
+
+### 4. tool_features (Join Table)
+
+Relation many-to-many entre tools et filters.
+
+**Colonnes :**
+
+```sql
+CREATE TABLE tool_features (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  tool_id UUID REFERENCES tools(id) ON DELETE CASCADE NOT NULL,
+  filter_id UUID REFERENCES filters(id) ON DELETE CASCADE NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(tool_id, filter_id)
+);
+```
+
+**Index :**
+```sql
+CREATE INDEX idx_tool_features_tool_id ON tool_features(tool_id);
+CREATE INDEX idx_tool_features_filter_id ON tool_features(filter_id);
+```
+
+**Contraintes :**
+- Unique constraint sur (tool_id, filter_id) pour éviter les doublons
+- CASCADE on delete : si un tool ou filter est supprimé, les relations disparaissent
+
+**Type TypeScript :**
+```typescript
+interface ToolFeature {
+  id: string;
+  tool_id: string;
+  filter_id: string;
+  created_at: string;
+}
+```
+
+**Récupération enrichie :**
+```typescript
+// API retourne EnhancedTool avec features
+interface EnhancedTool extends Tool {
+  category_name: string;
+  features: Filter[];
+}
+```
+
+---
+
+### 5. site_assets
+
+Gestion centralisée des assets du site (logos, images).
+
+**Colonnes :**
+
+```sql
+CREATE TABLE site_assets (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  name TEXT UNIQUE NOT NULL,
+  url TEXT NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+```
+
+**Contraintes :**
+- `name` : Unique (identifiant de l'asset)
+- `url` : URL Supabase Storage
+
+**Type TypeScript :**
+```typescript
+interface SiteAsset {
+  id: string;
+  name: string;
+  url: string;
+  created_at: string;
+}
+```
+
+---
+
+## Workflow Tables
+
+### 6. workflows
+
+Parcours guidés étape par étape pour la transformation numérique.
+
+**Colonnes :**
+
+```sql
+CREATE TABLE workflows (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  title TEXT NOT NULL,
+  description TEXT NOT NULL,
+  difficulty TEXT CHECK (difficulty IN ('débutant', 'intermédiaire', 'expert')),
+  duration TEXT NOT NULL,
+  category TEXT NOT NULL,
+  icon TEXT NOT NULL,
+  status TEXT CHECK (status IN ('active', 'draft')) DEFAULT 'draft',
+  steps JSONB NOT NULL DEFAULT '[]',
+  display_order INTEGER DEFAULT 0,
+  objective TEXT,
+  completion_message TEXT,
+  next_steps JSONB DEFAULT '[]',
+  resources JSONB DEFAULT '[]',
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+```
+
+**Index :**
+```sql
+CREATE INDEX idx_workflows_status ON workflows(status);
+CREATE INDEX idx_workflows_difficulty ON workflows(difficulty);
+CREATE INDEX idx_workflows_display_order ON workflows(display_order);
+```
+
+**Contraintes :**
+- `difficulty` : Enum (débutant, intermédiaire, expert)
+- `status` : Enum (active, draft)
+- `steps` : JSONB array avec structure définie
+
+**Type TypeScript :**
+```typescript
+interface Workflow {
+  id: string;
+  title: string;
+  description: string;
+  difficulty: 'débutant' | 'intermédiaire' | 'expert';
+  duration: string; // Ex: "30min", "1h", "2h"
+  category: string;
+  icon: string; // Nom de l'icône Lucide
+  status: 'active' | 'draft';
+  steps: WorkflowStep[];
+  display_order: number;
+  objective?: string;
+  completion_message?: string;
+  next_steps: string[];
+  resources: Resource[];
+  created_at: string;
+  updated_at: string;
+}
+```
+
+**Structure JSONB steps :**
+```json
+[
+  {
+    "step_number": 1,
+    "tool_name": "Notion",
+    "action": "Créer un compte gratuit",
+    "tool_url": "https://notion.so",
+    "practical_tip": "Utilisez votre email professionnel"
+  }
+]
+```
+
+---
+
+### 7. workflow_steps
+
+Détails enrichis des étapes de workflow.
+
+**Colonnes :**
+
+```sql
+CREATE TABLE workflow_steps (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  workflow_id UUID REFERENCES workflows(id) ON DELETE CASCADE NOT NULL,
+  step_number INTEGER NOT NULL,
+  tool_name TEXT NOT NULL,
+  action TEXT NOT NULL,
+  tool_url TEXT,
+  tool_description TEXT,
+  detailed_instructions JSONB DEFAULT '[]',
+  practical_tip TEXT,
+  template TEXT,
+  template_description TEXT,
+  elements_to_include JSONB DEFAULT '[]',
+  completion_checklist TEXT[],
+  next_workflows UUID[],
+  warnings TEXT[],
+  best_practices TEXT[],
+  warning_severity TEXT CHECK (warning_severity IN ('warning', 'danger', 'info')),
+  story JSONB,
+  visuals JSONB,
+  videos JSONB,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+```
+
+**Index :**
+```sql
+CREATE INDEX idx_workflow_steps_workflow_id ON workflow_steps(workflow_id);
+CREATE INDEX idx_workflow_steps_step_number ON workflow_steps(step_number);
+```
+
+**Contraintes :**
+- `workflow_id` : CASCADE on delete
+- `warning_severity` : Enum (warning, danger, info)
+
+**Type TypeScript :**
+```typescript
+interface WorkflowStep {
+  id: string;
+  workflow_id: string;
+  step_number: number;
+  tool_name: string;
+  action: string;
+  tool_url?: string;
+  tool_description?: string;
+  detailed_instructions: string[];
+  practical_tip?: string;
+  template?: string;
+  template_description?: string;
+  elements_to_include: string[];
+  completion_checklist?: string[];
+  next_workflows?: string[];
+  warnings?: string[];
+  best_practices?: string[];
+  warning_severity?: 'warning' | 'danger' | 'info';
+  story?: StoryContent;
+  visuals?: VisualContent;
+  videos?: VideoContent;
+  created_at: string;
+  updated_at: string;
+}
+
+interface StoryContent {
+  persona: string;
+  situation: string;
+  goal: string;
+}
+```
+
+---
+
+## Pack System
+
+### 8. tool_packs
+
+Collections curées d'outils pour des cas d'usage spécifiques.
+
+**Colonnes :**
+
+```sql
+CREATE TABLE tool_packs (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  title TEXT NOT NULL,
+  description TEXT NOT NULL,
+  difficulty TEXT CHECK (difficulty IN ('débutant', 'intermédiaire', 'expert')),
+  icon TEXT DEFAULT 'Package',
+  color TEXT DEFAULT 'blue',
+  display_order INTEGER DEFAULT 0,
+  status TEXT CHECK (status IN ('active', 'draft')) DEFAULT 'active',
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+```
+
+**Index :**
+```sql
+CREATE INDEX idx_tool_packs_status ON tool_packs(status);
+CREATE INDEX idx_tool_packs_display_order ON tool_packs(display_order);
+```
+
+**Contraintes :**
+- `difficulty` : Nullable, enum si défini
+- `status` : Enum (active, draft)
+
+**Type TypeScript :**
+```typescript
+interface ToolPack {
+  id: string;
+  title: string;
+  description: string;
+  difficulty?: 'débutant' | 'intermédiaire' | 'expert';
+  icon: string; // Nom icône Lucide
+  color: string; // Couleur Tailwind (blue, green, orange...)
+  display_order: number;
+  status: 'active' | 'draft';
+  created_at: string;
+  updated_at: string;
+}
+```
+
+**Exemples de packs :**
+- "Starter Pack" (débutant, icon: Rocket, color: blue)
+- "Communication & Email" (intermédiaire, icon: Mail, color: green)
+- "Automatisation" (expert, icon: Zap, color: orange)
+
+---
+
+### 9. pack_tools (Join Table)
+
+Relation many-to-many entre packs et tools avec ordering.
+
+**Colonnes :**
+
+```sql
+CREATE TABLE pack_tools (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  pack_id UUID REFERENCES tool_packs(id) ON DELETE CASCADE NOT NULL,
+  tool_id UUID REFERENCES tools(id) ON DELETE CASCADE NOT NULL,
+  display_order INTEGER DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(pack_id, tool_id)
+);
+```
+
+**Index :**
+```sql
+CREATE INDEX idx_pack_tools_pack_id ON pack_tools(pack_id);
+CREATE INDEX idx_pack_tools_tool_id ON pack_tools(tool_id);
+CREATE INDEX idx_pack_tools_display_order ON pack_tools(display_order);
+```
+
+**Contraintes :**
+- Unique (pack_id, tool_id) : un outil ne peut être qu'une fois dans un pack
+- CASCADE on delete : si pack ou tool supprimé, relation disparaît
+
+**Type TypeScript :**
+```typescript
+interface PackTool {
+  id: string;
+  pack_id: string;
+  tool_id: string;
+  display_order: number;
+  created_at: string;
+}
+```
+
+---
+
+## Quiz System
+
+### 10. quizzes
+
+Définitions des quiz de diagnostic.
+
+**Colonnes :**
+
+```sql
+CREATE TABLE quizzes (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  title TEXT NOT NULL,
+  description TEXT,
+  slug TEXT UNIQUE NOT NULL,
+  is_active BOOLEAN DEFAULT TRUE,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+```
+
+**Index :**
+```sql
+CREATE INDEX idx_quizzes_slug ON quizzes(slug);
+CREATE INDEX idx_quizzes_is_active ON quizzes(is_active);
+```
+
+**Contraintes :**
+- `slug` : Unique (pour routing /quiz/:slug)
+- `is_active` : Boolean pour activer/désactiver
+
+**Type TypeScript :**
+```typescript
+interface Quiz {
+  id: string;
+  title: string;
+  description?: string;
+  slug: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+```
+
+---
+
+### 11. quiz_questions
+
+Questions du quiz avec types variés.
+
+**Colonnes :**
+
+```sql
+CREATE TABLE quiz_questions (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  quiz_id UUID REFERENCES quizzes(id) ON DELETE CASCADE NOT NULL,
+  question_text TEXT NOT NULL,
+  question_type TEXT CHECK (question_type IN ('single', 'multiple', 'scale')) NOT NULL,
+  order_index INTEGER NOT NULL,
+  is_required BOOLEAN DEFAULT TRUE,
+  help_text TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+```
+
+**Index :**
+```sql
+CREATE INDEX idx_quiz_questions_quiz_id ON quiz_questions(quiz_id);
+CREATE INDEX idx_quiz_questions_order_index ON quiz_questions(order_index);
+```
+
+**Contraintes :**
+- `question_type` : Enum (single, multiple, scale)
+- `order_index` : Définit l'ordre d'affichage
+
+**Type TypeScript :**
+```typescript
+interface QuizQuestion {
+  id: string;
+  quiz_id: string;
+  question_text: string;
+  question_type: 'single' | 'multiple' | 'scale';
+  order_index: number;
+  is_required: boolean;
+  help_text?: string;
+  created_at: string;
+  updated_at: string;
+}
+```
+
+---
+
+### 12. quiz_answers
+
+Options de réponse pour les questions.
+
+**Colonnes :**
+
+```sql
+CREATE TABLE quiz_answers (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  question_id UUID REFERENCES quiz_questions(id) ON DELETE CASCADE NOT NULL,
+  answer_text TEXT NOT NULL,
+  answer_value TEXT NOT NULL,
+  order_index INTEGER NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+```
+
+**Index :**
+```sql
+CREATE INDEX idx_quiz_answers_question_id ON quiz_answers(question_id);
+CREATE INDEX idx_quiz_answers_order_index ON quiz_answers(order_index);
+```
+
+**Type TypeScript :**
+```typescript
+interface QuizAnswer {
+  id: string;
+  question_id: string;
+  answer_text: string; // Texte affiché à l'utilisateur
+  answer_value: string; // Valeur pour logique conditionnelle
+  order_index: number;
+  created_at: string;
+}
+```
+
+---
+
+### 13. quiz_recommendations
+
+Règles de recommandation basées sur les réponses.
+
+**Colonnes :**
+
+```sql
+CREATE TABLE quiz_recommendations (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  quiz_id UUID REFERENCES quizzes(id) ON DELETE CASCADE NOT NULL,
+  condition_logic JSONB NOT NULL,
+  recommended_pack_ids UUID[] DEFAULT '{}',
+  recommended_tool_ids UUID[] DEFAULT '{}',
+  recommendation_text TEXT,
+  priority INTEGER DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+```
+
+**Index :**
+```sql
+CREATE INDEX idx_quiz_recommendations_quiz_id ON quiz_recommendations(quiz_id);
+CREATE INDEX idx_quiz_recommendations_priority ON quiz_recommendations(priority);
+```
+
+**Type TypeScript :**
+```typescript
+interface QuizRecommendation {
+  id: string;
+  quiz_id: string;
+  condition_logic: ConditionLogic;
+  recommended_pack_ids: string[];
+  recommended_tool_ids: string[];
+  recommendation_text?: string;
+  priority: number;
+  created_at: string;
+}
+
+interface ConditionLogic {
+  operator: 'AND' | 'OR';
+  conditions: Condition[];
+}
+
+interface Condition {
+  question_id: string;
+  operator: 'equals' | 'contains' | 'greater_than' | 'less_than';
+  value: string | number;
+}
+```
+
+**Exemple condition_logic :**
+```json
+{
+  "operator": "AND",
+  "conditions": [
+    {
+      "question_id": "q1",
+      "operator": "equals",
+      "value": "beginner"
+    },
+    {
+      "question_id": "q2",
+      "operator": "contains",
+      "value": "email"
+    }
+  ]
+}
+```
+
+---
+
+### 14. quiz_responses
+
+Soumissions des utilisateurs avec recommandations.
+
+**Colonnes :**
+
+```sql
+CREATE TABLE quiz_responses (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  quiz_id UUID REFERENCES quizzes(id) ON DELETE CASCADE NOT NULL,
+  answers JSONB NOT NULL,
+  recommended_pack_ids UUID[] DEFAULT '{}',
+  recommended_tool_ids UUID[] DEFAULT '{}',
+  email TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+```
+
+**Index :**
+```sql
+CREATE INDEX idx_quiz_responses_quiz_id ON quiz_responses(quiz_id);
+CREATE INDEX idx_quiz_responses_created_at ON quiz_responses(created_at);
+```
+
+**Type TypeScript :**
+```typescript
+interface QuizResponse {
+  id: string;
+  quiz_id: string;
+  answers: Record<string, string | string[]>;
+  recommended_pack_ids: string[];
+  recommended_tool_ids: string[];
+  email?: string;
+  created_at: string;
+}
+```
+
+**Exemple answers JSONB :**
+```json
+{
+  "q1_maturity": "beginner",
+  "q2_tools": ["email", "website"],
+  "q3_budget": "free"
+}
+```
+
+---
+
+## Relations et Cardinalités
+
+**Schéma relationnel :**
+
+```
+categories (1) ──< (N) tools
+tools (N) ──< (N) filters (via tool_features)
+tools (N) ──< (N) tool_packs (via pack_tools)
+workflows (1) ──< (N) workflow_steps
+quizzes (1) ──< (N) quiz_questions
+quiz_questions (1) ──< (N) quiz_answers
+quizzes (1) ──< (N) quiz_recommendations
+quizzes (1) ──< (N) quiz_responses
+```
+
+**Cascades :**
+- Suppression d'un `tool` → supprime ses `tool_features` et `pack_tools`
+- Suppression d'un `workflow` → supprime ses `workflow_steps`
+- Suppression d'un `quiz` → supprime `questions`, `answers`, `recommendations`, `responses`
+- Suppression d'une `category` → SET NULL sur `tools.category_id`
+
+---
+
+## Ressources
+
+<CardGroup cols={2}>
+  <Card title="RLS Policies" icon="shield" href="/database/rls">
+    Sécurité Row Level Security sur toutes les tables
+  </Card>
+  <Card title="Migrations" icon="database" href="/database/migrations">
+    Processus des 43 migrations et rollback
+  </Card>
+  <Card title="Storage Buckets" icon="folder" href="/database/storage">
+    Gestion des logos et assets
+  </Card>
+  <Card title="API Layer" icon="code" href="/development/api-layer">
+    Utilisation de l'API pour requêter la base
+  </Card>
+</CardGroup>

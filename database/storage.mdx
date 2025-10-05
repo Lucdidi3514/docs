@@ -1,0 +1,607 @@
+---
+title: 'Supabase Storage'
+description: 'Gestion des buckets tool_logos et site_assets avec policies et upload/download'
+---
+
+## Vue d'ensemble
+
+Kit'Asso utilise **Supabase Storage** pour gérer les fichiers statiques (logos d'outils, assets du site). Le système repose sur 2 buckets principaux avec des policies de sécurité distinctes.
+
+**Buckets configurés :**
+- **tool_logos** : Logos des outils du catalogue (~100+ images)
+- **site_assets** : Assets généraux du site (images, icônes, médias)
+
+**Avantages :**
+- CDN intégré pour diffusion rapide
+- Policies de sécurité granulaires
+- URLs publiques permanentes
+- Gestion automatique des versions
+- Optimisation d'images (future)
+- Limitation de taille et type de fichiers
+
+**Statistiques :**
+- Limite par fichier : 2MB (tool_logos), 5MB (site_assets)
+- Formats acceptés : image/*, video/* (site_assets)
+- Accès public en lecture, authenticated en écriture
+
+---
+
+## Bucket : tool_logos
+
+### Configuration
+
+**Paramètres du bucket :**
+```json
+{
+  "name": "tool_logos",
+  "public": true,
+  "file_size_limit": 2097152,
+  "allowed_mime_types": ["image/png", "image/jpeg", "image/jpg", "image/svg+xml", "image/webp"]
+}
+```
+
+**Création du bucket :**
+```sql
+-- Via SQL Editor Supabase
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('tool_logos', 'tool_logos', true);
+```
+
+---
+
+### Storage Policies
+
+**Public Read (téléchargement) :**
+```sql
+CREATE POLICY "Allow public read on tool_logos"
+  ON storage.objects
+  FOR SELECT
+  TO public
+  USING (bucket_id = 'tool_logos');
+```
+
+**Authenticated Upload :**
+```sql
+CREATE POLICY "Allow authenticated upload on tool_logos"
+  ON storage.objects
+  FOR INSERT
+  TO authenticated
+  WITH CHECK (bucket_id = 'tool_logos');
+```
+
+**Authenticated Update :**
+```sql
+CREATE POLICY "Allow authenticated update on tool_logos"
+  ON storage.objects
+  FOR UPDATE
+  TO authenticated
+  USING (bucket_id = 'tool_logos');
+```
+
+**Authenticated Delete :**
+```sql
+CREATE POLICY "Allow authenticated delete on tool_logos"
+  ON storage.objects
+  FOR DELETE
+  TO authenticated
+  USING (bucket_id = 'tool_logos');
+```
+
+**Résultat :**
+- Visiteurs anonymes : ✅ Voir les logos
+- Admins authentifiés : ✅ Upload, modifier, supprimer
+
+---
+
+### Upload de logos
+
+**Fichier :** `src/features/tools/modals/ToolModal/LogoUpload.tsx`
+
+```typescript
+import { supabase } from '@/lib/supabase';
+
+async function uploadToolLogo(file: File): Promise<string> {
+  // 1. Valider le fichier
+  if (file.size > 2 * 1024 * 1024) {
+    throw new Error('Fichier trop volumineux (max 2MB)');
+  }
+
+  const allowedTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/svg+xml', 'image/webp'];
+  if (!allowedTypes.includes(file.type)) {
+    throw new Error('Format non supporté. Utilisez PNG, JPG, SVG ou WebP');
+  }
+
+  // 2. Générer un nom unique
+  const fileExt = file.name.split('.').pop();
+  const fileName = `${Math.random().toString(36).substring(7)}_${Date.now()}.${fileExt}`;
+  const filePath = `tool_logos/${fileName}`;
+
+  // 3. Upload vers Supabase Storage
+  const { error: uploadError } = await supabase.storage
+    .from('tool_logos')
+    .upload(filePath, file, {
+      cacheControl: '3600',
+      upsert: false
+    });
+
+  if (uploadError) {
+    throw new Error(`Erreur upload: ${uploadError.message}`);
+  }
+
+  // 4. Récupérer l'URL publique
+  const { data } = supabase.storage
+    .from('tool_logos')
+    .getPublicUrl(filePath);
+
+  return data.publicUrl;
+}
+```
+
+**Exemple d'utilisation :**
+```typescript
+const handleLogoUpload = async (file: File) => {
+  try {
+    const logoUrl = await uploadToolLogo(file);
+    
+    // Sauvegarder dans la table tools
+    await toolsApi.update(toolId, { logo_url: logoUrl });
+    
+    toast.success('Logo uploadé avec succès');
+  } catch (error) {
+    toast.error(error.message);
+  }
+};
+```
+
+---
+
+### Récupération de logos
+
+**URL publique directe :**
+```typescript
+// URL retournée par getPublicUrl()
+const logoUrl = "https://xxxxx.supabase.co/storage/v1/object/public/tool_logos/abc123.png";
+
+// Affichage dans un composant
+<img src={logoUrl} alt="Logo" />
+```
+
+**Component avec fallback :**
+```typescript
+interface ToolLogoProps {
+  url: string | null;
+  name: string;
+  size?: 'sm' | 'md' | 'lg';
+}
+
+export function ToolLogo({ url, name, size = 'md' }: ToolLogoProps) {
+  const [error, setError] = useState(false);
+
+  const sizeClasses = {
+    sm: 'w-8 h-8',
+    md: 'w-12 h-12',
+    lg: 'w-16 h-16'
+  };
+
+  if (!url || error) {
+    // Fallback : initiales du nom
+    return (
+      <div className={`${sizeClasses[size]} rounded-lg bg-indigo-100 flex items-center justify-center`}>
+        <span className="text-indigo-600 font-semibold">
+          {name.charAt(0).toUpperCase()}
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <img
+      src={url}
+      alt={`Logo ${name}`}
+      className={`${sizeClasses[size]} rounded-lg object-cover`}
+      onError={() => setError(true)}
+      loading="lazy"
+    />
+  );
+}
+```
+
+---
+
+### Suppression de logos
+
+**Fonction de suppression :**
+```typescript
+async function deleteToolLogo(logoUrl: string): Promise<void> {
+  // Extraire le path depuis l'URL
+  const path = logoUrl.split('/storage/v1/object/public/tool_logos/')[1];
+  
+  if (!path) {
+    throw new Error('URL invalide');
+  }
+
+  const { error } = await supabase.storage
+    .from('tool_logos')
+    .remove([`tool_logos/${path}`]);
+
+  if (error) {
+    throw new Error(`Erreur suppression: ${error.message}`);
+  }
+}
+```
+
+**Usage lors de la suppression d'un outil :**
+```typescript
+const handleDeleteTool = async (tool: Tool) => {
+  try {
+    // 1. Supprimer le logo du storage
+    if (tool.logo_url) {
+      await deleteToolLogo(tool.logo_url);
+    }
+
+    // 2. Supprimer l'outil de la DB
+    await toolsApi.delete(tool.id);
+
+    toast.success('Outil supprimé');
+  } catch (error) {
+    toast.error('Erreur lors de la suppression');
+  }
+};
+```
+
+---
+
+## Bucket : site_assets
+
+### Configuration
+
+**Paramètres du bucket :**
+```json
+{
+  "name": "site_assets",
+  "public": true,
+  "file_size_limit": 5242880,
+  "allowed_mime_types": [
+    "image/png", 
+    "image/jpeg", 
+    "image/jpg", 
+    "image/svg+xml", 
+    "image/webp",
+    "video/mp4",
+    "video/webm"
+  ]
+}
+```
+
+**Création du bucket :**
+```sql
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('site_assets', 'site_assets', true);
+```
+
+---
+
+### Storage Policies
+
+**Identiques à tool_logos :**
+```sql
+-- Public read
+CREATE POLICY "Allow public read on site_assets"
+  ON storage.objects FOR SELECT TO public
+  USING (bucket_id = 'site_assets');
+
+-- Authenticated write
+CREATE POLICY "Allow authenticated insert on site_assets"
+  ON storage.objects FOR INSERT TO authenticated
+  WITH CHECK (bucket_id = 'site_assets');
+
+CREATE POLICY "Allow authenticated update on site_assets"
+  ON storage.objects FOR UPDATE TO authenticated
+  USING (bucket_id = 'site_assets');
+
+CREATE POLICY "Allow authenticated delete on site_assets"
+  ON storage.objects FOR DELETE TO authenticated
+  USING (bucket_id = 'site_assets');
+```
+
+---
+
+### Upload d'assets
+
+**Fonction générique :**
+```typescript
+async function uploadSiteAsset(
+  file: File,
+  folder: string = 'general'
+): Promise<string> {
+  // Validation
+  if (file.size > 5 * 1024 * 1024) {
+    throw new Error('Fichier trop volumineux (max 5MB)');
+  }
+
+  // Générer path
+  const fileExt = file.name.split('.').pop();
+  const fileName = `${folder}/${Date.now()}_${file.name}`;
+
+  // Upload
+  const { error } = await supabase.storage
+    .from('site_assets')
+    .upload(fileName, file);
+
+  if (error) throw error;
+
+  // Retourner URL
+  const { data } = supabase.storage
+    .from('site_assets')
+    .getPublicUrl(fileName);
+
+  return data.publicUrl;
+}
+```
+
+**Organisation par dossiers :**
+```
+site_assets/
+├── icons/
+│   ├── feature_icon_1.svg
+│   └── category_icon_2.svg
+├── illustrations/
+│   ├── hero_image.png
+│   └── workflow_diagram.png
+├── videos/
+│   ├── tutorial_1.mp4
+│   └── demo.webm
+└── general/
+    └── misc_asset.jpg
+```
+
+---
+
+### Gestion centralisée avec site_assets table
+
+**Table de référence :**
+```sql
+CREATE TABLE site_assets (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  name TEXT UNIQUE NOT NULL,
+  url TEXT NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+```
+
+**Workflow :**
+1. Upload fichier vers bucket `site_assets`
+2. Enregistrer référence dans table `site_assets`
+3. Utiliser `name` comme identifiant dans le code
+
+**Exemple :**
+```typescript
+// 1. Upload
+const url = await uploadSiteAsset(file, 'icons');
+
+// 2. Enregistrer en DB
+await supabase.from('site_assets').insert({
+  name: 'hero_background',
+  url: url
+});
+
+// 3. Récupérer plus tard
+const { data } = await supabase
+  .from('site_assets')
+  .select('url')
+  .eq('name', 'hero_background')
+  .single();
+
+console.log(data.url); // URL du fichier
+```
+
+---
+
+## Optimisations
+
+### Cache-Control headers
+
+**Configuration lors de l'upload :**
+```typescript
+const { error } = await supabase.storage
+  .from('tool_logos')
+  .upload(filePath, file, {
+    cacheControl: '31536000', // 1 an
+    upsert: false
+  });
+```
+
+**Résultat :**
+- CDN met en cache pendant 1 an
+- Réduction de la bande passante
+- Chargement plus rapide
+
+---
+
+### Transformation d'images (Future)
+
+**Supabase supporte les transformations à la volée :**
+
+```typescript
+// Resize automatique
+const thumbnailUrl = supabase.storage
+  .from('tool_logos')
+  .getPublicUrl('logo.png', {
+    transform: {
+      width: 100,
+      height: 100,
+      resize: 'cover'
+    }
+  });
+```
+
+**Usage possible :**
+- Thumbnails pour grilles
+- Images responsive
+- Optimisation WebP automatique
+
+---
+
+## Bonnes pratiques
+
+### ✅ À faire
+
+**Valider les fichiers avant upload**
+```typescript
+function validateFile(file: File, maxSize: number, allowedTypes: string[]) {
+  if (file.size > maxSize) {
+    throw new Error(`Fichier trop volumineux (max ${maxSize / 1024 / 1024}MB)`);
+  }
+
+  if (!allowedTypes.includes(file.type)) {
+    throw new Error(`Format non supporté: ${file.type}`);
+  }
+
+  return true;
+}
+```
+
+**Utiliser des noms uniques**
+```typescript
+// ✅ Bon : timestamp + random
+const fileName = `${Date.now()}_${Math.random().toString(36)}.${ext}`;
+
+// ❌ Mauvais : nom original (risque de collision)
+const fileName = file.name;
+```
+
+**Nettoyer les fichiers obsolètes**
+```typescript
+// Supprimer ancien logo avant d'uploader le nouveau
+if (tool.logo_url) {
+  await deleteToolLogo(tool.logo_url);
+}
+
+const newLogoUrl = await uploadToolLogo(newFile);
+```
+
+**Gérer les erreurs gracieusement**
+```typescript
+try {
+  const url = await uploadToolLogo(file);
+  setLogoUrl(url);
+} catch (error) {
+  // Ne pas bloquer l'utilisateur
+  console.error('Upload failed:', error);
+  toast.error('Erreur upload, veuillez réessayer');
+  // Continuer avec un logo par défaut
+}
+```
+
+---
+
+### ❌ À éviter
+
+**Ne pas stocker de fichiers sensibles**
+```typescript
+// ❌ DANGER : bucket public
+await supabase.storage
+  .from('tool_logos')
+  .upload('user_password.txt', file); // Visible par tous !
+```
+
+**Ne pas uploader sans validation**
+```typescript
+// ❌ Mauvais : accepte n'importe quoi
+const { error } = await supabase.storage
+  .from('tool_logos')
+  .upload(fileName, file);
+
+// ✅ Bon : validation stricte
+validateFile(file, 2 * 1024 * 1024, ['image/png', 'image/jpeg']);
+const { error } = await supabase.storage
+  .from('tool_logos')
+  .upload(fileName, file);
+```
+
+**Ne pas oublier de nettoyer les orphelins**
+```typescript
+// ❌ Problème : fichiers non référencés dans la DB
+// Créer un script de nettoyage périodique
+
+// ✅ Solution : lister tous les logos utilisés vs stockés
+const usedLogos = await supabase.from('tools').select('logo_url');
+const storedFiles = await supabase.storage.from('tool_logos').list();
+
+// Identifier et supprimer les orphelins
+```
+
+---
+
+## Debugging Storage
+
+### Lister tous les fichiers d'un bucket
+
+```typescript
+const { data: files, error } = await supabase.storage
+  .from('tool_logos')
+  .list('', {
+    limit: 100,
+    offset: 0,
+    sortBy: { column: 'created_at', order: 'desc' }
+  });
+
+console.log(files);
+// [{name: 'abc.png', created_at: '...', size: 12345}, ...]
+```
+
+---
+
+### Vérifier l'existence d'un fichier
+
+```typescript
+async function fileExists(bucket: string, path: string): Promise<boolean> {
+  const { data, error } = await supabase.storage
+    .from(bucket)
+    .list(path.split('/').slice(0, -1).join('/'));
+
+  if (error) return false;
+
+  const fileName = path.split('/').pop();
+  return data.some(file => file.name === fileName);
+}
+```
+
+---
+
+### Obtenir les métadonnées
+
+```typescript
+const { data, error } = await supabase.storage
+  .from('tool_logos')
+  .list('', { limit: 1 });
+
+console.log(data[0]);
+// {
+//   name: 'logo.png',
+//   id: 'uuid',
+//   updated_at: '2024-01-15T10:30:00Z',
+//   created_at: '2024-01-15T10:30:00Z',
+//   last_accessed_at: '2024-01-15T10:30:00Z',
+//   metadata: { size: 12345, mimetype: 'image/png' }
+// }
+```
+
+---
+
+## Ressources
+
+<CardGroup cols={2}>
+  <Card title="Database Schema" icon="database" href="/database/schema">
+    Table site_assets pour références centralisées
+  </Card>
+  <Card title="Admin Dashboard" icon="shield" href="/features/admin">
+    Interface d'upload dans le panel Tools
+  </Card>
+  <Card title="Supabase Setup" icon="cloud" href="/deployment/supabase">
+    Configuration des buckets en production
+  </Card>
+  <Card title="RLS Policies" icon="lock" href="/database/rls">
+    Sécurité des buckets Storage
+  </Card>
+</CardGroup>

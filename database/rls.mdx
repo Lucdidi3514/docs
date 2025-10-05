@@ -1,0 +1,828 @@
+---
+title: 'Row Level Security (RLS)'
+description: 'Policies de sécurité PostgreSQL pour accès public et authentifié'
+---
+
+## Vue d'ensemble
+
+Kit'Asso utilise le système Row Level Security (RLS) de PostgreSQL pour contrôler finement l'accès aux données. Chaque table a des policies définissant qui peut lire, créer, modifier ou supprimer des enregistrements.
+
+**Philosophie de sécurité :**
+> "Le public peut lire le contenu actif, les utilisateurs authentifiés peuvent tout gérer"
+
+**Règles générales :**
+- ✅ **Public** : Lecture du contenu `status = 'active'` ou `is_active = true`
+- ✅ **Authenticated** : CRUD complet sur toutes les tables, accès aux drafts
+- ❌ **Anonymous** : Pas de création, modification ou suppression
+
+---
+
+## Configuration RLS
+
+### Activation globale
+
+RLS est activé sur **toutes les 13 tables** :
+
+```sql
+ALTER TABLE tools ENABLE ROW LEVEL SECURITY;
+ALTER TABLE categories ENABLE ROW LEVEL SECURITY;
+ALTER TABLE filters ENABLE ROW LEVEL SECURITY;
+ALTER TABLE tool_features ENABLE ROW LEVEL SECURITY;
+ALTER TABLE workflows ENABLE ROW LEVEL SECURITY;
+ALTER TABLE workflow_steps ENABLE ROW LEVEL SECURITY;
+ALTER TABLE tool_packs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE pack_tools ENABLE ROW LEVEL SECURITY;
+ALTER TABLE quizzes ENABLE ROW LEVEL SECURITY;
+ALTER TABLE quiz_questions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE quiz_answers ENABLE ROW LEVEL SECURITY;
+ALTER TABLE quiz_recommendations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE quiz_responses ENABLE ROW LEVEL SECURITY;
+ALTER TABLE site_assets ENABLE ROW LEVEL SECURITY;
+```
+
+**Impact :** Sans policies, AUCUNE requête ne retourne de résultats (même pour admin).
+
+---
+
+## Policies par table
+
+### 1. Tools
+
+**Public - Lecture seule :**
+```sql
+CREATE POLICY "Allow public read on tools"
+  ON tools
+  FOR SELECT
+  TO public
+  USING (true);
+```
+
+**Authenticated - CRUD complet :**
+```sql
+CREATE POLICY "Allow authenticated insert on tools"
+  ON tools
+  FOR INSERT
+  TO authenticated
+  WITH CHECK (true);
+
+CREATE POLICY "Allow authenticated update on tools"
+  ON tools
+  FOR UPDATE
+  TO authenticated
+  USING (true)
+  WITH CHECK (true);
+
+CREATE POLICY "Allow authenticated delete on tools"
+  ON tools
+  FOR DELETE
+  TO authenticated
+  USING (true);
+
+CREATE POLICY "Allow authenticated read all tools"
+  ON tools
+  FOR SELECT
+  TO authenticated
+  USING (true);
+```
+
+**Résultat :**
+- Visiteurs anonymes : ✅ Lecture de tous les outils
+- Admins authentifiés : ✅ Lecture, création, modification, suppression
+
+---
+
+### 2. Categories
+
+**Mêmes policies que tools :**
+
+```sql
+-- Public read
+CREATE POLICY "Allow public read on categories"
+  ON categories FOR SELECT TO public USING (true);
+
+-- Authenticated CRUD
+CREATE POLICY "Allow authenticated insert on categories"
+  ON categories FOR INSERT TO authenticated WITH CHECK (true);
+
+CREATE POLICY "Allow authenticated update on categories"
+  ON categories FOR UPDATE TO authenticated USING (true) WITH CHECK (true);
+
+CREATE POLICY "Allow authenticated delete on categories"
+  ON categories FOR DELETE TO authenticated USING (true);
+```
+
+---
+
+### 3. Filters & Tool Features
+
+**Mêmes policies que tools/categories :**
+
+```sql
+-- Filters
+CREATE POLICY "Allow public read on filters"
+  ON filters FOR SELECT TO public USING (true);
+
+CREATE POLICY "Allow authenticated full access on filters"
+  ON filters FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+-- Tool Features
+CREATE POLICY "Allow public read on tool_features"
+  ON tool_features FOR SELECT TO public USING (true);
+
+CREATE POLICY "Allow authenticated full access on tool_features"
+  ON tool_features FOR ALL TO authenticated USING (true) WITH CHECK (true);
+```
+
+---
+
+### 4. Workflows
+
+**Public - Uniquement workflows actifs :**
+```sql
+CREATE POLICY "Allow public read on active workflows"
+  ON workflows
+  FOR SELECT
+  TO public
+  USING (status = 'active');
+```
+
+**Authenticated - Accès complet (y compris drafts) :**
+```sql
+CREATE POLICY "Allow authenticated read all workflows"
+  ON workflows
+  FOR SELECT
+  TO authenticated
+  USING (true);
+
+CREATE POLICY "Allow authenticated insert on workflows"
+  ON workflows
+  FOR INSERT
+  TO authenticated
+  WITH CHECK (true);
+
+CREATE POLICY "Allow authenticated update on workflows"
+  ON workflows
+  FOR UPDATE
+  TO authenticated
+  USING (true)
+  WITH CHECK (true);
+
+CREATE POLICY "Allow authenticated delete on workflows"
+  ON workflows
+  FOR DELETE
+  TO authenticated
+  USING (true);
+```
+
+**Résultat :**
+- Visiteurs : ✅ Uniquement workflows `status = 'active'`
+- Admins : ✅ Tous les workflows (active + draft)
+
+---
+
+### 5. Workflow Steps
+
+**Public - Uniquement steps de workflows actifs :**
+```sql
+CREATE POLICY "Allow public read on steps of active workflows"
+  ON workflow_steps
+  FOR SELECT
+  TO public
+  USING (
+    EXISTS (
+      SELECT 1 FROM workflows
+      WHERE workflows.id = workflow_steps.workflow_id
+      AND workflows.status = 'active'
+    )
+  );
+```
+
+**Authenticated - Tous les steps :**
+```sql
+CREATE POLICY "Allow authenticated read all workflow_steps"
+  ON workflow_steps
+  FOR SELECT
+  TO authenticated
+  USING (true);
+
+CREATE POLICY "Allow authenticated insert on workflow_steps"
+  ON workflow_steps
+  FOR INSERT
+  TO authenticated
+  WITH CHECK (true);
+
+CREATE POLICY "Allow authenticated update on workflow_steps"
+  ON workflow_steps
+  FOR UPDATE
+  TO authenticated
+  USING (true)
+  WITH CHECK (true);
+
+CREATE POLICY "Allow authenticated delete on workflow_steps"
+  ON workflow_steps
+  FOR DELETE
+  TO authenticated
+  USING (true);
+```
+
+**Logique :** Les steps suivent la visibilité de leur workflow parent.
+
+---
+
+### 6. Tool Packs
+
+**Public - Uniquement packs actifs :**
+```sql
+CREATE POLICY "Allow public read on active packs"
+  ON tool_packs
+  FOR SELECT
+  TO public
+  USING (status = 'active');
+```
+
+**Authenticated - Tous les packs :**
+```sql
+CREATE POLICY "Allow authenticated read all packs"
+  ON tool_packs
+  FOR SELECT
+  TO authenticated
+  USING (true);
+
+CREATE POLICY "Allow authenticated insert on packs"
+  ON tool_packs
+  FOR INSERT
+  TO authenticated
+  WITH CHECK (true);
+
+CREATE POLICY "Allow authenticated update on packs"
+  ON tool_packs
+  FOR UPDATE
+  TO authenticated
+  USING (true)
+  WITH CHECK (true);
+
+CREATE POLICY "Allow authenticated delete on packs"
+  ON tool_packs
+  FOR DELETE
+  TO authenticated
+  USING (true);
+```
+
+---
+
+### 7. Pack Tools
+
+**Public - Lecture complète (join avec packs actifs géré côté app) :**
+```sql
+CREATE POLICY "Allow public read on pack_tools"
+  ON pack_tools
+  FOR SELECT
+  TO public
+  USING (true);
+```
+
+**Authenticated - CRUD complet :**
+```sql
+CREATE POLICY "Allow authenticated full access on pack_tools"
+  ON pack_tools
+  FOR ALL
+  TO authenticated
+  USING (true)
+  WITH CHECK (true);
+```
+
+---
+
+### 8. Quizzes
+
+**Public - Uniquement quiz actifs :**
+```sql
+CREATE POLICY "Allow public read on active quizzes"
+  ON quizzes
+  FOR SELECT
+  TO public
+  USING (is_active = true);
+```
+
+**Authenticated - Tous les quiz :**
+```sql
+CREATE POLICY "Allow authenticated read all quizzes"
+  ON quizzes
+  FOR SELECT
+  TO authenticated
+  USING (true);
+
+CREATE POLICY "Allow authenticated insert on quizzes"
+  ON quizzes
+  FOR INSERT
+  TO authenticated
+  WITH CHECK (true);
+
+CREATE POLICY "Allow authenticated update on quizzes"
+  ON quizzes
+  FOR UPDATE
+  TO authenticated
+  USING (true)
+  WITH CHECK (true);
+
+CREATE POLICY "Allow authenticated delete on quizzes"
+  ON quizzes
+  FOR DELETE
+  TO authenticated
+  USING (true);
+```
+
+---
+
+### 9. Quiz Questions
+
+**Public - Questions de quiz actifs uniquement :**
+```sql
+CREATE POLICY "Allow public read on questions of active quizzes"
+  ON quiz_questions
+  FOR SELECT
+  TO public
+  USING (
+    EXISTS (
+      SELECT 1 FROM quizzes
+      WHERE quizzes.id = quiz_questions.quiz_id
+      AND quizzes.is_active = true
+    )
+  );
+```
+
+**Authenticated - Toutes les questions :**
+```sql
+CREATE POLICY "Allow authenticated read all quiz_questions"
+  ON quiz_questions
+  FOR SELECT
+  TO authenticated
+  USING (true);
+
+CREATE POLICY "Allow authenticated insert on quiz_questions"
+  ON quiz_questions
+  FOR INSERT
+  TO authenticated
+  WITH CHECK (true);
+
+CREATE POLICY "Allow authenticated update on quiz_questions"
+  ON quiz_questions
+  FOR UPDATE
+  TO authenticated
+  USING (true)
+  WITH CHECK (true);
+
+CREATE POLICY "Allow authenticated delete on quiz_questions"
+  ON quiz_questions
+  FOR DELETE
+  TO authenticated
+  USING (true);
+```
+
+---
+
+### 10. Quiz Answers
+
+**Public - Réponses de quiz actifs :**
+```sql
+CREATE POLICY "Allow public read on answers of active quizzes"
+  ON quiz_answers
+  FOR SELECT
+  TO public
+  USING (
+    EXISTS (
+      SELECT 1 FROM quiz_questions
+      JOIN quizzes ON quizzes.id = quiz_questions.quiz_id
+      WHERE quiz_questions.id = quiz_answers.question_id
+      AND quizzes.is_active = true
+    )
+  );
+```
+
+**Authenticated - Toutes les réponses :**
+```sql
+CREATE POLICY "Allow authenticated read all quiz_answers"
+  ON quiz_answers
+  FOR SELECT
+  TO authenticated
+  USING (true);
+
+CREATE POLICY "Allow authenticated insert on quiz_answers"
+  ON quiz_answers
+  FOR INSERT
+  TO authenticated
+  WITH CHECK (true);
+
+CREATE POLICY "Allow authenticated update on quiz_answers"
+  ON quiz_answers
+  FOR UPDATE
+  TO authenticated
+  USING (true)
+  WITH CHECK (true);
+
+CREATE POLICY "Allow authenticated delete on quiz_answers"
+  ON quiz_answers
+  FOR DELETE
+  TO authenticated
+  USING (true);
+```
+
+---
+
+### 11. Quiz Recommendations
+
+**Public - Recommandations de quiz actifs :**
+```sql
+CREATE POLICY "Allow public read on recommendations of active quizzes"
+  ON quiz_recommendations
+  FOR SELECT
+  TO public
+  USING (
+    EXISTS (
+      SELECT 1 FROM quizzes
+      WHERE quizzes.id = quiz_recommendations.quiz_id
+      AND quizzes.is_active = true
+    )
+  );
+```
+
+**Authenticated - Toutes les recommandations :**
+```sql
+CREATE POLICY "Allow authenticated full access on quiz_recommendations"
+  ON quiz_recommendations
+  FOR ALL
+  TO authenticated
+  USING (true)
+  WITH CHECK (true);
+```
+
+---
+
+### 12. Quiz Responses
+
+**Public - INSERT uniquement (soumission de quiz) :**
+```sql
+CREATE POLICY "Allow public insert on quiz_responses"
+  ON quiz_responses
+  FOR INSERT
+  TO public
+  WITH CHECK (true);
+```
+
+**Authenticated - Accès complet pour analytics :**
+```sql
+CREATE POLICY "Allow authenticated read all quiz_responses"
+  ON quiz_responses
+  FOR SELECT
+  TO authenticated
+  USING (true);
+
+CREATE POLICY "Allow authenticated update on quiz_responses"
+  ON quiz_responses
+  FOR UPDATE
+  TO authenticated
+  USING (true)
+  WITH CHECK (true);
+
+CREATE POLICY "Allow authenticated delete on quiz_responses"
+  ON quiz_responses
+  FOR DELETE
+  TO authenticated
+  USING (true);
+```
+
+**Cas spécial :** Le public peut soumettre des réponses mais ne peut pas les lire.
+
+---
+
+### 13. Site Assets
+
+**Public - Lecture seule :**
+```sql
+CREATE POLICY "Allow public read on site_assets"
+  ON site_assets
+  FOR SELECT
+  TO public
+  USING (true);
+```
+
+**Authenticated - CRUD complet :**
+```sql
+CREATE POLICY "Allow authenticated full access on site_assets"
+  ON site_assets
+  FOR ALL
+  TO authenticated
+  USING (true)
+  WITH CHECK (true);
+```
+
+---
+
+## Patterns de policies
+
+### Pattern 1 : Public read, Authenticated CRUD
+
+**Tables concernées :** tools, categories, filters, tool_features, site_assets
+
+```sql
+-- Public
+CREATE POLICY "public_read" ON {table}
+  FOR SELECT TO public USING (true);
+
+-- Authenticated
+CREATE POLICY "auth_crud" ON {table}
+  FOR ALL TO authenticated USING (true) WITH CHECK (true);
+```
+
+**Utilisation :** Tables sans notion de statut, toujours visibles.
+
+---
+
+### Pattern 2 : Public read active, Authenticated read all
+
+**Tables concernées :** workflows, tool_packs, quizzes
+
+```sql
+-- Public (filtre sur status/is_active)
+CREATE POLICY "public_read_active" ON {table}
+  FOR SELECT TO public
+  USING (status = 'active'); -- ou is_active = true
+
+-- Authenticated
+CREATE POLICY "auth_read_all" ON {table}
+  FOR SELECT TO authenticated USING (true);
+
+CREATE POLICY "auth_write" ON {table}
+  FOR INSERT/UPDATE/DELETE TO authenticated
+  USING (true) WITH CHECK (true);
+```
+
+**Utilisation :** Tables avec workflow draft/publish.
+
+---
+
+### Pattern 3 : Public read via parent, Authenticated full
+
+**Tables concernées :** workflow_steps, quiz_questions, quiz_answers, quiz_recommendations
+
+```sql
+-- Public (join avec table parent)
+CREATE POLICY "public_read_via_parent" ON {child_table}
+  FOR SELECT TO public
+  USING (
+    EXISTS (
+      SELECT 1 FROM {parent_table}
+      WHERE {parent_table}.id = {child_table}.{parent_id}
+      AND {parent_table}.status = 'active'
+    )
+  );
+
+-- Authenticated
+CREATE POLICY "auth_full" ON {child_table}
+  FOR ALL TO authenticated USING (true) WITH CHECK (true);
+```
+
+**Utilisation :** Tables enfants dont la visibilité dépend du parent.
+
+---
+
+### Pattern 4 : Public insert only
+
+**Tables concernées :** quiz_responses
+
+```sql
+-- Public (insertion uniquement)
+CREATE POLICY "public_insert_only" ON quiz_responses
+  FOR INSERT TO public WITH CHECK (true);
+
+-- Authenticated (lecture + CRUD)
+CREATE POLICY "auth_full" ON quiz_responses
+  FOR ALL TO authenticated USING (true) WITH CHECK (true);
+```
+
+**Utilisation :** Permet aux visiteurs de soumettre des données sans les lire.
+
+---
+
+## Tests de policies
+
+### Test 1 : Utilisateur anonyme
+
+**Requête :**
+```sql
+-- Depuis client non authentifié
+SELECT * FROM tools;
+SELECT * FROM workflows;
+```
+
+**Résultat attendu :**
+```sql
+-- tools : ✅ Retourne tous les outils
+-- workflows : ✅ Retourne uniquement status = 'active'
+```
+
+**Vérification :**
+```typescript
+// Test côté frontend
+const { data: tools } = await supabase.from('tools').select('*');
+console.log(tools); // ✅ Tous les outils
+
+const { data: workflows } = await supabase.from('workflows').select('*');
+console.log(workflows); // ✅ Uniquement workflows actifs
+```
+
+---
+
+### Test 2 : Utilisateur authentifié
+
+**Requête :**
+```sql
+-- Après signIn
+SELECT * FROM workflows WHERE status = 'draft';
+INSERT INTO tools (name, description, pricing_tier) VALUES (...);
+```
+
+**Résultat attendu :**
+```sql
+-- SELECT : ✅ Retourne les drafts
+-- INSERT : ✅ Création autorisée
+```
+
+**Vérification :**
+```typescript
+await authApi.signIn('admin@kitasso.fr', 'password');
+
+const { data: drafts } = await supabase
+  .from('workflows')
+  .select('*')
+  .eq('status', 'draft');
+console.log(drafts); // ✅ Voir les drafts
+
+const { error } = await supabase
+  .from('tools')
+  .insert({ name: 'Nouveau Tool', description: '...', pricing_tier: 'Gratuit' });
+console.log(error); // null ✅
+```
+
+---
+
+### Test 3 : Tentative d'insertion anonyme
+
+**Requête :**
+```sql
+-- Sans authentification
+INSERT INTO tools (name, description) VALUES ('Hack', 'Test');
+```
+
+**Résultat attendu :**
+```
+ERROR: new row violates row-level security policy for table "tools"
+```
+
+**Vérification :**
+```typescript
+// Sans signIn
+const { error } = await supabase
+  .from('tools')
+  .insert({ name: 'Hack', description: 'Test' });
+
+console.log(error.message);
+// "new row violates row-level security policy"
+```
+
+---
+
+### Test 4 : Visibilité des steps
+
+**Requête :**
+```sql
+-- Public : doit voir uniquement steps de workflows actifs
+SELECT ws.* FROM workflow_steps ws
+JOIN workflows w ON w.id = ws.workflow_id
+WHERE w.status = 'draft';
+```
+
+**Résultat attendu :**
+```
+0 rows (policy empêche l'accès)
+```
+
+**Vérification :**
+```typescript
+const { data } = await supabase
+  .from('workflow_steps')
+  .select('*, workflows(status)')
+  .eq('workflows.status', 'draft');
+
+console.log(data); // [] (vide pour utilisateur public)
+```
+
+---
+
+## Bonnes pratiques
+
+### ✅ À faire
+
+**Toujours activer RLS sur nouvelles tables**
+```sql
+CREATE TABLE new_table (...);
+ALTER TABLE new_table ENABLE ROW LEVEL SECURITY;
+
+-- Puis définir policies
+CREATE POLICY "public_read" ON new_table FOR SELECT TO public USING (true);
+```
+
+**Tester policies avant déploiement**
+```sql
+-- En tant que public
+SET ROLE anon;
+SELECT * FROM workflows; -- Doit retourner uniquement actifs
+
+-- En tant qu'authenticated
+SET ROLE authenticated;
+SELECT * FROM workflows; -- Doit retourner tous
+```
+
+**Utiliser des noms de policies descriptifs**
+```sql
+-- ✅ Bon
+CREATE POLICY "Allow public read on active workflows"
+
+-- ❌ Mauvais
+CREATE POLICY "policy_1"
+```
+
+---
+
+### ❌ À éviter
+
+**Ne jamais désactiver RLS en production**
+```sql
+-- ❌ DANGER : Expose toutes les données
+ALTER TABLE tools DISABLE ROW LEVEL SECURITY;
+```
+
+**Ne pas créer de policies trop permissives**
+```sql
+-- ❌ Mauvais : permet à tous de tout faire
+CREATE POLICY "allow_all" ON tools FOR ALL TO public USING (true);
+```
+
+**Ne pas oublier WITH CHECK sur INSERT/UPDATE**
+```sql
+-- ❌ Incomplet
+CREATE POLICY "auth_insert" ON tools FOR INSERT TO authenticated USING (true);
+
+-- ✅ Complet
+CREATE POLICY "auth_insert" ON tools FOR INSERT TO authenticated WITH CHECK (true);
+```
+
+---
+
+## Debugging RLS
+
+### Lister toutes les policies
+
+```sql
+SELECT schemaname, tablename, policyname, permissive, roles, cmd, qual, with_check
+FROM pg_policies
+WHERE schemaname = 'public'
+ORDER BY tablename, policyname;
+```
+
+### Vérifier si RLS est activé
+
+```sql
+SELECT tablename, rowsecurity
+FROM pg_tables
+WHERE schemaname = 'public';
+```
+
+### Supprimer une policy
+
+```sql
+DROP POLICY "policy_name" ON table_name;
+```
+
+### Recréer toutes les policies (après erreur)
+
+Voir fichier de migration correspondant dans `supabase/migrations/`.
+
+---
+
+## Ressources
+
+<CardGroup cols={2}>
+  <Card title="Database Schema" icon="database" href="/database/schema">
+    Structure complète des 13 tables
+  </Card>
+  <Card title="Migrations" icon="git-branch" href="/database/migrations">
+    Historique des 43 migrations avec RLS
+  </Card>
+  <Card title="API Layer" icon="code" href="/development/api-layer">
+    Abstractions qui respectent RLS automatiquement
+  </Card>
+  <Card title="Authentication" icon="lock" href="/architecture/patterns">
+    Gestion des sessions Supabase Auth
+  </Card>
+</CardGroup>
